@@ -1,0 +1,41 @@
+{
+    "Library": "rpp_control",
+    "Plugins": {
+        "rpp_control::PIDController": {
+            "Name": "PIDController",
+            "ClassName": "PIDController",
+            "PluginType": "rpp_common::MotionController2D",
+            "PluginClassName": "MotionController2D",
+            "FullyQualifiedClassName": "<class 'pid_controller.PIDController'>",
+            "FullyQualifiedPluginClassName": "<class 'rpp_plugin_types.rpp_common.MotionController2D.MotionController2D'>",
+            "HasParameters": false,
+            "Description": "No description provided.",
+            "IsCasadi": false,
+            "PluginPath": "/home/luka/fer/rpp/rpp_control/rpp_control/pid_controller.py",
+            "Type": "python",
+            "Components": {},
+            "Library": "rpp_control",
+            "PluginName": "rpp_control::PIDController",
+            "Id": "rpp_control__p_i_d_controller"
+        },
+        "rpp_control::MPCController": {
+            "Name": "MPCController",
+            "ClassName": "MPCController",
+            "PluginType": "rpp_common::MotionController2D",
+            "PluginClassName": "MotionController2D",
+            "FullyQualifiedClassName": "<class 'mpc_controller.MPCController'>",
+            "FullyQualifiedPluginClassName": "<class 'rpp_plugin_types.rpp_common.MotionController2D.MotionController2D'>",
+            "HasParameters": false,
+            "Description": "No description provided.",
+            "IsCasadi": false,
+            "PluginPath": "/home/luka/fer/rpp/rpp_control/rpp_control/mpc_controller.py",
+            "Type": "python",
+            "Components": {},
+            "Library": "rpp_control",
+            "PluginName": "rpp_control::MPCController",
+            "Id": "rpp_control__m_p_c_controller"
+        }
+    },
+    "PluginTypes": {},
+    "Version": "0.0.1"
+}

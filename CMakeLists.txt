@@ -5,17 +5,34 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(CapnProto REQUIRED)
+find_package(pybind11 REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Development)
+find_package(pybind11 REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
 # header only library
 add_library(rpp_cpp src/plugin_runtime.capnp.c++)
-target_link_libraries(rpp_cpp CapnProto::capnp CapnProto::capnp-rpc)
-target_include_directories(rpp_cpp PUBLIC include ${CapnProto_INCLUDE_DIRS})
+target_link_libraries(rpp_cpp
+  CapnProto::capnp
+  CapnProto::capnp-rpc
+  ${Python3_LIBRARIES}
+  pybind11::embed
+)
+target_include_directories(rpp_cpp PUBLIC include
+  ${CapnProto_INCLUDE_DIRS}
+  ${Python3_INCLUDE_DIRS}
+  ${pybind11_INCLUDE_DIRS}
+)
 
 add_executable(component_server_cpp src/component_server.cpp src/plugin_runtime.capnp.c++)
 target_include_directories(component_server_cpp PRIVATE include)
@@ -62,9 +79,14 @@ if(BUILD_TESTING)
 
 
   include_directories(tests)
-  file(COPY tests/data DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+  add_custom_target(copy_test_data ALL
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/data
+              ${CMAKE_CURRENT_BINARY_DIR}/tests/data
+  )
 
   ament_add_gtest(test_instance_plugin_cpp tests/test_instance_plugin_cpp.cpp)
+
   file(GLOB_RECURSE GENERATED_SOURCES "${INCLUDE_GENERATED_DIR}/capnp_gen/**/*.c++")
   target_sources(test_instance_plugin_cpp PRIVATE
     ${GENERATED_SOURCES}
@@ -73,10 +95,19 @@ if(BUILD_TESTING)
   add_dependencies(test_instance_plugin_cpp GenerateTestRpp rpp_cpp)
   target_include_directories(test_instance_plugin_cpp PRIVATE include ${INCLUDE_GENERATED_DIR})
   target_compile_definitions(test_instance_plugin_cpp PRIVATE
-      AUTOGEN_RPP_HOME="${GENERATED_DIR}/.rpp"
+    AUTOGEN_RPP_HOME="${GENERATED_DIR}/.rpp"
+    TEST_DATA_DIR="${CMAKE_CURRENT_BINARY_DIR}/data"
   )
   target_link_libraries(test_instance_plugin_cpp
     CapnProto::capnp CapnProto::kj CapnProto::capnp-rpc CapnProto::kj-async rpp_cpp)
+
+
+  ament_add_gtest(test_rpp_cpp tests/test_parameters.cpp)
+  target_link_libraries(test_rpp_cpp rpp_cpp)
+  target_compile_definitions(test_rpp_cpp PRIVATE
+    TEST_DATA_DIR="${CMAKE_CURRENT_BINARY_DIR}/data"
+  )
+
 
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

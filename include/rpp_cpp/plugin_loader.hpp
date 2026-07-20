@@ -12,17 +12,19 @@
 #include "adapter_info.hpp"
 #include "rpp_paths.hpp"
 #include "capnp/ez-rpc.h"
+#include "parameter_description.hpp"
 
 
 namespace rpp {
 
-template <typename PluginBase>
-using PluginPtr = std::shared_ptr<PluginBase>;
+template <typename BaseType>
+using Ptr = std::shared_ptr<BaseType>;
 
-template <typename PluginBase>
-PluginPtr<PluginBase> load_from_shared_library__(
+template <typename BaseType>
+Ptr<BaseType> load_from_shared_library__(
     const std::string& shared_library_path,
-    const std::string& create_symbol = "create_plugin") {
+    const std::string& create_symbol = "create_plugin",
+    bool delete_on_close = true) {
 
     auto registry_dir = get_registry_dir();  // Ensure the registry directory is set up
     auto shared_library_path_abs = registry_dir + "/" + shared_library_path;
@@ -34,7 +36,7 @@ PluginPtr<PluginBase> load_from_shared_library__(
     }
 
     dlerror();
-    using FactoryFn = PluginBase* (*)();
+    using FactoryFn = BaseType* (*)();
     void* symbol = dlsym(handle, create_symbol.c_str());
     const char* symbol_error = dlerror();
     if (symbol_error != nullptr || symbol == nullptr) {
@@ -45,7 +47,7 @@ PluginPtr<PluginBase> load_from_shared_library__(
     }
 
     auto factory = reinterpret_cast<FactoryFn>(symbol);
-    PluginBase* raw_plugin = factory();
+    BaseType* raw_plugin = factory();
     if (raw_plugin == nullptr) {
         dlclose(handle);
         throw std::runtime_error(std::string("Factory symbol '")
@@ -53,18 +55,47 @@ PluginPtr<PluginBase> load_from_shared_library__(
             + shared_library_path_abs + "'.");
     }
 
-    return PluginPtr<PluginBase>(raw_plugin, [handle](PluginBase* plugin) {
-        delete plugin;
-        if (handle != nullptr) {
-            dlclose(handle);
-        }
-    });
+    if (delete_on_close)
+    {
+        return Ptr<BaseType>(raw_plugin, [handle](BaseType* plugin) {
+            delete plugin;
+            if (handle != nullptr) {
+                dlclose(handle);
+            }
+        });
+    }
+    else
+    {
+        return Ptr<BaseType>(raw_plugin, [handle](BaseType* /* plugin*/) {
+            if (handle != nullptr) {
+                dlclose(handle);
+            }
+        });
+    }
 }
 
+Ptr<params::RppParameters_T> load_cpp_plugin_parameters_description(
+    const PluginInfo& info,
+    const std::string& create_symbol = "get_plugin_parameters_description") {
+    auto plugin_ptr = load_from_shared_library__<params::RppParameters_T>(info.plugin_shared_library_path, create_symbol, false);
+    if (!plugin_ptr) {
+        throw std::runtime_error("Failed to load plugin: " + info.plugin_name);
+    }
+    return plugin_ptr;
+}
 
+Ptr<params::RppComponents_T> load_cpp_plugin_components(
+    const PluginInfo& info,
+    const std::string& create_symbol = "get_plugin_components") {
+    auto plugin_ptr = load_from_shared_library__<params::RppComponents_T>(info.plugin_shared_library_path, create_symbol, false);
+    if (!plugin_ptr) {
+        throw std::runtime_error("Failed to load plugin: " + info.plugin_name);
+    }
+    return plugin_ptr;
+}
 
 template <typename PluginBase>
-PluginPtr<PluginBase> load_cpp_plugin_from_shared_library(
+Ptr<PluginBase> load_cpp_plugin_from_shared_library(
     const PluginInfo& info,
     const std::string& create_symbol = "create_plugin") {
     return load_from_shared_library__<PluginBase>(
@@ -72,14 +103,14 @@ PluginPtr<PluginBase> load_cpp_plugin_from_shared_library(
 }
 
 
-PluginPtr<Plugin> load_cpp_plugin_from_shared_library(
+Ptr<Plugin> load_cpp_plugin_from_shared_library(
     const PluginInfo& info,
     const std::string& create_symbol = "create_plugin") {
     return load_from_shared_library__<Plugin>(
             info.plugin_shared_library_path, create_symbol);
 }
 
-PluginPtr<ClientAdapter> load_plugin_adapter_client(
+Ptr<ClientAdapter> load_plugin_adapter_client(
         const PluginInfo& info,
         const std::string& host,
         uint16_t port,
@@ -106,9 +137,9 @@ PluginPtr<ClientAdapter> load_plugin_adapter_client(
 
 }
 
-PluginPtr<ServerAdapter> load_plugin_adapter_server(
+Ptr<ServerAdapter> load_plugin_adapter_server(
         const PluginInfo& info,
-        const PluginPtr<Plugin>& plugin_ptr,
+        const Ptr<Plugin>& plugin_ptr,
         const std::string& host,
         uint16_t port,
         const std::string& name = "",
@@ -138,19 +169,12 @@ PluginPtr<ServerAdapter> load_plugin_adapter_server(
     return server_ptr;
 }
 
-
-
-enum class AdapterMode {
-    Client,
-    Server
-};
-
-template <typename PluginBase>
-PluginPtr<typename PluginBase::AdapterClient> load_plugin_adapter_client(
+template <typename BaseType>
+Ptr<typename BaseType::AdapterClient> load_plugin_adapter_client(
     const std::string& host, uint16_t port, const std::string& name = "") {
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.
 
-    auto client = std::make_shared<typename PluginBase::AdapterClient>();
+    auto client = std::make_shared<typename BaseType::AdapterClient>();
 
     ClientAdapterParams info_adapter;
     if (name.empty()) {
@@ -168,8 +192,8 @@ PluginPtr<typename PluginBase::AdapterClient> load_plugin_adapter_client(
 }
 
 template <typename PluginBase>
-PluginPtr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
-        const PluginPtr<PluginBase>& plugin_ptr,
+Ptr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
+        const Ptr<PluginBase>& plugin_ptr,
         const std::string& host,
         uint16_t port, const std::string& name = "") {
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.

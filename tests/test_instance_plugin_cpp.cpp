@@ -110,6 +110,15 @@ TEST_F(TestSuite, TestInstancePlugin) {
 
     // works with implicit conversion to Const
     ASSERT_TRUE(loader->validate(pose_msg));
+
+    auto parameter_desc = rpp::load_cpp_plugin_parameters_description(plugin_info);
+
+    ASSERT_TRUE(parameter_desc != nullptr);
+
+    auto components_desc = rpp::load_cpp_plugin_components(plugin_info);
+
+    ASSERT_TRUE(components_desc != nullptr);
+
 }
 
 TEST_F(TestSuite, TestInstancePluginWithAsStruct) {
@@ -357,6 +366,7 @@ int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
     setenv("RPP_HOME", AUTOGEN_RPP_HOME, 1);
+    setenv("TEST_DATA_DIR", TEST_DATA_DIR, 1);
 
     // Pokrećemo GoogleTest najnormalnije
     return RUN_ALL_TESTS();

@@ -2,18 +2,20 @@
 #include <string>
 #include <memory>
 #include <chrono>
-#include "plugin.hpp"
+#include "plugin_def.hpp"
 #include <kj/async-io.h>
 
 
 namespace rpp {
 
+
 struct ServerAdapterParams {
+    using PluginPtr = std::unique_ptr<Plugin, std::function<void(Plugin*)>>;
     std::string name;
     std::string host;
     std::string plugin_name;
     uint16_t port;
-    std::shared_ptr<rpp::Plugin> backend;
+    PluginPtr backend;
 };
 
 

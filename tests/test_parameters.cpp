@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "rpp_cpp/plugin.hpp"
-#include "rpp_cpp/plugin_info.hpp"
-#include "rpp_cpp/library_manager.hpp"
+#include "rpp_cpp/data_model.hpp"
+#include "rpp_cpp/data_manager.hpp"
 #include "rpp_cpp/parameter_handler.hpp"
 
 
@@ -200,36 +200,37 @@ TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
         })}
     };
 
-    auto params = rpp::params::ParameterHandler::resolve_params(parameters_description, parameters_instance);
+    std::unique_ptr<rpp::params::Parameters> params;
+    rpp::params::ParameterHandler::resolve_params(parameters_description, parameters_instance, params);
 
-    ASSERT_EQ(params.get<double>("test_param_double"), 31.0);
-    ASSERT_EQ(params.get<int>("test_param_int"), 41);
-    ASSERT_EQ(params.get<std::string>("test_param_string"), "Test"); // test default value for string
-    ASSERT_EQ(params.get<bool>("test_param_bool"), true);
+    ASSERT_EQ(params->get<double>("test_param_double"), 31.0);
+    ASSERT_EQ(params->get<int>("test_param_int"), 41);
+    ASSERT_EQ(params->get<std::string>("test_param_string"), "Test"); // test default value for string
+    ASSERT_EQ(params->get<bool>("test_param_bool"), true);
     // this throws an exception if the parameter is not found or if the type does not match
     try {
-        auto struct1 = params.get<TestStruct1>("test_param_struct_invalid");
+        auto struct1 = params->get<TestStruct1>("test_param_struct_invalid");
     } catch (const std::exception& e) {
         auto message = std::string(e.what());
         ASSERT_TRUE(message.find("Field 'width' not found") == std::string::npos);
     }
 
-    ASSERT_EQ(params.get<TestStruct1>("test_param_struct").width, 2);
-    ASSERT_EQ(params.get<TestStruct1>("test_param_struct").height, "3");
-    ASSERT_EQ(params.get<TestStruct1>("test_param_struct").fps, 4.0);
+    ASSERT_EQ(params->get<TestStruct1>("test_param_struct").width, 2);
+    ASSERT_EQ(params->get<TestStruct1>("test_param_struct").height, "3");
+    ASSERT_EQ(params->get<TestStruct1>("test_param_struct").fps, 4.0);
 
     auto expected = std::vector<int>{2, 3, 4};
-    ASSERT_EQ(params.get<std::vector<int>>("test_param_list_primitive"), expected);
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct").size(), 2);
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[0].width, 2);
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[0].height, "3");
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[0].fps, 4.0);
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[1].width, 5);
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[1].height, "6");
-    ASSERT_EQ(params.get<std::vector<TestStruct1>>("test_param_list_struct")[1].fps, 7.0);
+    ASSERT_EQ(params->get<std::vector<int>>("test_param_list_primitive"), expected);
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct").size(), 2);
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[0].width, 2);
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[0].height, "3");
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[0].fps, 4.0);
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[1].width, 5);
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[1].height, "6");
+    ASSERT_EQ(params->get<std::vector<TestStruct1>>("test_param_list_struct")[1].fps, 7.0);
 
 
-    auto test_map_struct = params.get<std::map<std::string, TestStruct1>>("test_param_map_struct");
+    auto test_map_struct = params->get<std::map<std::string, TestStruct1>>("test_param_map_struct");
     ASSERT_EQ(test_map_struct.size(), 2);
     ASSERT_EQ(test_map_struct["first"].width, 2);
     ASSERT_EQ(test_map_struct["first"].height, "3");
@@ -238,7 +239,7 @@ TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
     ASSERT_EQ(test_map_struct["second"].height, "6");
     ASSERT_EQ(test_map_struct["second"].fps, 7.0);
 
-    auto test_struct2 = params.get<TestStruct2>("test_param_struct2");
+    auto test_struct2 = params->get<TestStruct2>("test_param_struct2");
     ASSERT_EQ(test_struct2.test_struct.width, 3);
     ASSERT_EQ(test_struct2.test_struct.height, "4");
     ASSERT_EQ(test_struct2.test_struct.fps, 5.0);
@@ -335,9 +336,6 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
     ASSERT_EQ(non_dataclass_test_struct["fps"].get<float>(), 3.0);
 }
 
-
-
-
 TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
 
     auto parameter_handler = std::make_unique<rpp::params::ParameterHandler>(
@@ -358,32 +356,33 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
 
     };
     auto loaded_params = parameter_handler->load_parameters_from_python_module();
-    auto params = parameter_handler->resolve_params(parameters, loaded_params);
+    std::unique_ptr<rpp::params::Parameters> params;
+    rpp::params::ParameterHandler::resolve_params(parameters, loaded_params, params);
 
     try{
-        params.get<float>("non_existent_param");
+        params->get<float>("non_existent_param");
     }
     catch (const std::exception& e) {
         auto message = std::string(e.what());
         ASSERT_TRUE(message.find("Parameter 'non_existent_param' not found") != std::string::npos);
     }
 
-    ASSERT_EQ(params.get<float>("float_var"), 5.0f);
-    ASSERT_EQ(params.get<int>("int_var"), 1);
-    ASSERT_EQ(params.get<std::string>("str_var"), "test");
-    auto list = params.get<std::vector<int>>("list_var");
+    ASSERT_EQ(params->get<float>("float_var"), 5.0f);
+    ASSERT_EQ(params->get<int>("int_var"), 1);
+    ASSERT_EQ(params->get<std::string>("str_var"), "test");
+    auto list = params->get<std::vector<int>>("list_var");
     ASSERT_EQ(list.size(), 3);
     ASSERT_EQ(list[0], 1);
     ASSERT_EQ(list[1], 2);
     ASSERT_EQ(list[2], 3);
-    auto dict = params.get<std::map<std::string, std::string>>("dict_var");
+    auto dict = params->get<std::map<std::string, std::string>>("dict_var");
     ASSERT_EQ(dict.size(), 1);
     ASSERT_EQ(dict["key"], "value");
-    auto list_dict = params.get<std::vector<std::map<std::string, std::string>>>("list_dict_var");
+    auto list_dict = params->get<std::vector<std::map<std::string, std::string>>>("list_dict_var");
     ASSERT_EQ(list_dict.size(), 2);
     ASSERT_EQ(list_dict[0]["key1"], "value1");
     ASSERT_EQ(list_dict[1]["key2"], "value2");
-    auto dict_list = params.get<std::map<std::string, std::vector<int>>>("dict_list_var");
+    auto dict_list = params->get<std::map<std::string, std::vector<int>>>("dict_list_var");
     ASSERT_EQ(dict_list.size(), 2);
     ASSERT_EQ(dict_list["key1"].size(), 3);
     ASSERT_EQ(dict_list["key1"][0], 1);
@@ -393,11 +392,11 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
     ASSERT_EQ(dict_list["key2"][0], 4);
     ASSERT_EQ(dict_list["key2"][1], 5);
     ASSERT_EQ(dict_list["key2"][2], 6);
-    auto struct_var = params.get<TestStruct1>("struct_var");
+    auto struct_var = params->get<TestStruct1>("struct_var");
     ASSERT_EQ(struct_var.width, 1);
     ASSERT_EQ(struct_var.height, "2");
     ASSERT_EQ(struct_var.fps, 3.0);
-    auto struct_var2 = params.get<TestStruct2>("complext_struct_var");
+    auto struct_var2 = params->get<TestStruct2>("complext_struct_var");
     ASSERT_EQ(struct_var2.test_struct.width, 1);
     ASSERT_EQ(struct_var2.test_struct.height, "2");
     ASSERT_EQ(struct_var2.test_struct.fps, 3.0);
@@ -415,7 +414,7 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
     ASSERT_EQ(struct_var2.test_struct_map["second"].width, 5);
     ASSERT_EQ(struct_var2.test_struct_map["second"].height, "6");
     ASSERT_EQ(struct_var2.test_struct_map["second"].fps, 7.0);
-    auto non_dataclass_var = params.get<TestStruct3>("non_dataclass_var");
+    auto non_dataclass_var = params->get<TestStruct3>("non_dataclass_var");
     ASSERT_EQ(non_dataclass_var.width, 1);
     ASSERT_EQ(non_dataclass_var.height, "2");
     ASSERT_EQ(non_dataclass_var.fps, 3.0);

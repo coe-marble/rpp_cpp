@@ -1,5 +1,5 @@
 #include "rpp_cpp/plugin_loader.hpp"
-#include "rpp_cpp/library_manager.hpp"
+#include "rpp_cpp/data_manager.hpp"
 #include "rpp_cpp/rpp_server_host.hpp"
 #include <iostream>
 #include <thread>
@@ -63,17 +63,20 @@ int main(int argc, char **argv) {
         }
     }
 
-    rpp::LibraryManager library_manager(rpp::RPP_HOME);
+    rpp::RppDataManager data_manager(rpp::RPP_HOME);
 
-    rpp::PluginInfo plugin_info = library_manager.get_plugin_info(plugin_name);
+    rpp::PluginInfo plugin_info = data_manager.get_plugin_info_from_lib(plugin_name);
 
     assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
 
+    std::cout << "Loading plugin: " << plugin_info.plugin_name << std::endl;
     auto instance = rpp::load_cpp_plugin_from_shared_library(plugin_info);
-    auto server_adapter = rpp::load_plugin_adapter_server(plugin_info, instance, host, plugin_port, name);
+    std::cout << "Loading plugin: " << plugin_info.plugin_name << " done." << std::endl;
+    auto server_adapter = rpp::load_plugin_adapter_server(plugin_info, std::move(instance), host, plugin_port, name);
+    std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
 
     rpp::RppServerHost server_host(host, runtime_port);
-    server_host.add_server(server_adapter);
+    server_host.add_server(std::move(server_adapter));
     server_host.run();
 
 

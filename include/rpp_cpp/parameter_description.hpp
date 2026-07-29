@@ -26,7 +26,10 @@ struct ParameterValue
     ParameterValue() : value(nullptr) {}
     ParameterValue(bool b) : value(b) {}
     ParameterValue(int64_t i) : value(i) {}
-    ParameterValue(int i) : value(static_cast<int64_t>(i)) {}
+    ParameterValue(int32_t i) : value(static_cast<int64_t>(i)) {}
+    ParameterValue(int16_t i) : value(static_cast<int64_t>(i)) {}
+    ParameterValue(int8_t i) : value(static_cast<int64_t>(i)) {}
+    ParameterValue(float f) : value(static_cast<double>(f)) {}
     ParameterValue(double d) : value(d) {}
     ParameterValue(std::string s) : value(std::move(s)) {}
     ParameterValue(const char* s) : value(std::string(s)) {}
@@ -71,11 +74,26 @@ struct ParameterConverter;
 // -----------------------------------------------------------------------------
 
 template<>
-struct ParameterConverter<int>
+struct ParameterConverter<int8_t>
 {
-    static ParameterValue to(int value);
-    static int from(const ParameterValue& value);
+    static ParameterValue to(int8_t value);
+    static int8_t from(const ParameterValue& value);
 };
+
+template<>
+struct ParameterConverter<int16_t>
+{
+    static ParameterValue to(int16_t value);
+    static int16_t from(const ParameterValue& value);
+};
+
+template<>
+struct ParameterConverter<int32_t>
+{
+    static ParameterValue to(int32_t value);
+    static int32_t from(const ParameterValue& value);
+};
+
 
 template<>
 struct ParameterConverter<int64_t>
@@ -85,17 +103,17 @@ struct ParameterConverter<int64_t>
 };
 
 template<>
-struct ParameterConverter<double>
-{
-    static ParameterValue to(double value);
-    static double from(const ParameterValue& value);
-};
-
-template<>
 struct ParameterConverter<float>
 {
     static ParameterValue to(float value);
     static float from(const ParameterValue& value);
+};
+
+template<>
+struct ParameterConverter<double>
+{
+    static ParameterValue to(double value);
+    static double from(const ParameterValue& value);
 };
 
 template<>
@@ -164,25 +182,56 @@ inline T ParameterValue::get() const
 }
 
 // -----------------------------------------------------------------------------
-// int
+// ints
 // -----------------------------------------------------------------------------
 
 inline ParameterValue
-ParameterConverter<int>::to(int value)
+ParameterConverter<int8_t>::to(int8_t value)
 {
     return int64_t(value);
 }
 
-inline int
-ParameterConverter<int>::from(const ParameterValue& value)
+inline int8_t
+ParameterConverter<int8_t>::from(const ParameterValue& value)
 {
-    return static_cast<int>(
+    if (!std::holds_alternative<int64_t>(value.value)) {
+        throw std::runtime_error("Parameter value is not an int.");
+    }
+    return static_cast<int8_t>(
         std::get<int64_t>(value.value));
 }
 
-// -----------------------------------------------------------------------------
-// int64_t
-// -----------------------------------------------------------------------------
+inline ParameterValue
+ParameterConverter<int16_t>::to(int16_t value)
+{
+    return int64_t(value);
+}
+
+inline int16_t
+ParameterConverter<int16_t>::from(const ParameterValue& value)
+{
+    if (!std::holds_alternative<int64_t>(value.value)) {
+        throw std::runtime_error("Parameter value is not an int.");
+    }
+    return static_cast<int16_t>(
+        std::get<int64_t>(value.value));
+}
+
+inline ParameterValue
+ParameterConverter<int32_t>::to(int32_t value)
+{
+    return int64_t(value);
+}
+
+inline int32_t
+ParameterConverter<int32_t>::from(const ParameterValue& value)
+{
+    if (!std::holds_alternative<int64_t>(value.value)) {
+        throw std::runtime_error("Parameter value is not an int.");
+    }
+    return static_cast<int32_t>(
+        std::get<int64_t>(value.value));
+}
 
 inline ParameterValue
 ParameterConverter<int64_t>::to(int64_t value)
@@ -193,12 +242,37 @@ ParameterConverter<int64_t>::to(int64_t value)
 inline int64_t
 ParameterConverter<int64_t>::from(const ParameterValue& value)
 {
+    if (!std::holds_alternative<int64_t>(value.value)) {
+        throw std::runtime_error("Parameter value is not an int.");
+    }
     return std::get<int64_t>(value.value);
 }
 
 // -----------------------------------------------------------------------------
-// double
+// floats
 // -----------------------------------------------------------------------------
+
+inline ParameterValue
+ParameterConverter<float>::to(float value)
+{
+    return double(value);
+}
+
+inline float
+ParameterConverter<float>::from(const ParameterValue& value)
+{
+    if (std::holds_alternative<int64_t>(value.value))
+    {
+        return static_cast<float>(
+            std::get<int64_t>(value.value));
+    }
+    if (!std::holds_alternative<double>(value.value)) {
+        throw std::runtime_error("Parameter value is not a float.");
+    }
+    return static_cast<float>(
+        std::get<double>(value.value));
+}
+
 
 inline ParameterValue
 ParameterConverter<double>::to(double value)
@@ -209,24 +283,15 @@ ParameterConverter<double>::to(double value)
 inline double
 ParameterConverter<double>::from(const ParameterValue& value)
 {
+    if (std::holds_alternative<int64_t>(value.value))
+    {
+        return static_cast<double>(
+            std::get<int64_t>(value.value));
+    }
+    if (!std::holds_alternative<double>(value.value)) {
+        throw std::runtime_error("Parameter value is not a double.");
+    }
     return std::get<double>(value.value);
-}
-
-// -----------------------------------------------------------------------------
-// float
-// -----------------------------------------------------------------------------
-
-inline ParameterValue
-ParameterConverter<float>::to(float value)
-{
-    return static_cast<double>(value);
-}
-
-inline float
-ParameterConverter<float>::from(const ParameterValue& value)
-{
-    return static_cast<float>(
-        std::get<double>(value.value));
 }
 
 // -----------------------------------------------------------------------------
@@ -242,6 +307,9 @@ ParameterConverter<bool>::to(bool value)
 inline bool
 ParameterConverter<bool>::from(const ParameterValue& value)
 {
+    if (!std::holds_alternative<bool>(value.value)) {
+        throw std::runtime_error("Parameter value is not a boolean.");
+    }
     return std::get<bool>(value.value);
 }
 

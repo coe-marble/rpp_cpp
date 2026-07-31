@@ -13,25 +13,27 @@ class RppServerHost final {
 
     private:
         std::string host_;
-        uint16_t runtime_port_;
+        uint16_t port_;
         kj::AsyncIoContext io_;
-        std::vector<std::shared_ptr<ServerAdapter>> adapters_;
+        std::map<std::string, std::shared_ptr<ServerAdapter>> adapters_;
         kj::Own<PluginRuntimeServer> runtime_server_impl_;
         std::unique_ptr<runtime::CapnpServer> runtime_server_;
         std::atomic<bool> shutdown_requested_;
 
     public:
-        RppServerHost(const std::string& host, uint16_t runtime_port)
+        RppServerHost(const std::string& host, uint16_t port)
             : host_(host),
-              runtime_port_(runtime_port),
+              port_(port),
               io_(kj::setupAsyncIo()),
               runtime_server_impl_(kj::heap<PluginRuntimeServer>()),
               shutdown_requested_(false)
         {
         }
 
-        void add_server(std::shared_ptr<ServerAdapter> adapter) {
-            adapters_.push_back(adapter);
+        void add_server(std::shared_ptr<ServerAdapter> adapter)
+        {
+            std::string name = adapter->get_info_adapter_server__().connection_name;
+            adapters_[name] = adapter;
         }
 
         void run()
@@ -47,20 +49,10 @@ class RppServerHost final {
                 kj::NullDisposer::instance
             );
 
-            auto server_cap = capnp::Capability::Client(std::move(owned_server));
+            auto runtime_server_cap = capnp::Capability::Client(std::move(owned_server));
             runtime_server_ = std::make_unique<runtime::CapnpServer>(
-                io_,
-                server_cap,
-                host_,
-                runtime_port_
+                io_, host_, port_, runtime_server_cap, adapters_
             );
-
-
-
-            // Start all adapter servers
-            for (auto& adapter : adapters_) {
-                adapter->start_adapter_server__(io_);
-            }
 
             kj::Timer& timer = io_.provider->getTimer();
             std::function<kj::Promise<void>()> checkShutdown;
@@ -73,8 +65,9 @@ class RppServerHost final {
             };
             checkShutdown().wait(io_.waitScope);
 
-            for (auto& adapter : adapters_) {
+            for (auto& [name, adapter] : adapters_) {
                 adapter->close_adapter_server__();
+                (void)name; // Suppress unused variable warning
             }
 
         }

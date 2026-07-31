@@ -44,6 +44,8 @@ namespace rpp {
             std::string component_path;
         };
 
+        using SubcomponentAdaptersMap = std::map<std::string, std::vector<SubcomponentAdapter>>;
+
         ComponentContext build_for_component(std::string component_path, bool is_subcomponent = false) const
         {
             auto component_record = data_manager_.load_component_info(component_path);
@@ -59,9 +61,10 @@ namespace rpp {
             rpp::PluginInfo plugin_info =
                 data_manager_.get_plugin_info_from_lib(record.plugin_name);
 
-            if (plugin_info.source_language == "cpp")
-                return handle_cpp_subcomponent(record, plugin_info, component_path);
-            return handle_adapter_subcomponent(record, plugin_info, component_path, subcomponent_adapters);
+            // SubcomponentAdaptersMap subcomponent_adapters;
+            // if (plugin_info.source_language == "cpp")
+            return handle_cpp_subcomponent(record, plugin_info, component_path);
+            // return handle_adapter_subcomponent(record, plugin_info, component_path, subcomponent_adapters);
         }
 
         ComponentContext handle_cpp_subcomponent(
@@ -92,25 +95,25 @@ namespace rpp {
 
         }
 
-        ComponentContext handle_adapter_subcomponent(
-            const rpp::ComponentRecord& record,
-            const rpp::PluginInfo& plugin_info,
-            const std::string& component_path,
-            std::map<std::string, std::vector<SubcomponentAdapter>>& subcomponent_adapters) const
-        {
-            auto source_language = plugin_info.source_language;
-            subcomponent_adapters[source_language].push_back(
-                SubcomponentAdapter{ record.plugin_name, component_path });
-            std::string command = get_command_name_for_source_language(source_language) +
-                " --host " + host_ +
-                " --plugin-port " + std::to_string(plugin_port_) +
-                " --runtime-port " + std::to_string(runtime_port_) +
-                " --plugin " + plugin_info.name +
-                " --home " + TestSuite::rpp_home_dir +
-                " --component-path " + TestSuite::rpp_home_dir + "/components";
+        // ComponentContext handle_adapter_subcomponent(
+        //     const rpp::ComponentRecord& record,
+        //     const rpp::PluginInfo& plugin_info,
+        //     const std::string& component_path,
+        //     SubcomponentAdaptersMap& subcomponent_adapters)
+        // {
+        //     auto source_language = plugin_info.source_language;
+        //     subcomponent_adapters[source_language].push_back(
+        //         SubcomponentAdapter{ record.plugin_name, component_path });
+        //     std::string command = get_command_name_for_source_language(source_language) +
+        //         " --host " + host_ +
+        //         " --plugin-port " + std::to_string(plugin_port_) +
+        //         " --runtime-port " + std::to_string(runtime_port_) +
+        //         " --plugin " + plugin_info.name +
+        //         " --home " + TestSuite::rpp_home_dir +
+        //         " --component-path " + TestSuite::rpp_home_dir + "/components";
 
-            return ComponentContext(command);
-        }
+        //     return ComponentContext(command);
+        // }
 
 
         std::string get_command_name_for_source_language(const std::string& source_language) const

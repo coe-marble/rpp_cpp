@@ -24,6 +24,8 @@ CAPNP_DECLARE_SCHEMA(f3b057e72e9137ae);
 CAPNP_DECLARE_SCHEMA(837f9a79acc685ed);
 CAPNP_DECLARE_SCHEMA(de257b3a35509468);
 CAPNP_DECLARE_SCHEMA(858cb4e32e17cb5e);
+CAPNP_DECLARE_SCHEMA(b86d955ab051a0a3);
+CAPNP_DECLARE_SCHEMA(f06938a4191a874a);
 CAPNP_DECLARE_SCHEMA(a52ea179cbcf660a);
 
 }  // namespace schemas
@@ -46,6 +48,8 @@ struct PluginRuntime {
   struct ShutdownResults;
   struct ListAdaptersParams;
   struct ListAdaptersResults;
+  struct GetComponentCapabilityParams;
+  struct GetComponentCapabilityResults;
 
   #if !CAPNP_LITE
   struct _capnpPrivate {
@@ -145,6 +149,36 @@ struct PluginRuntime::ListAdaptersResults {
   };
 };
 
+struct PluginRuntime::GetComponentCapabilityParams {
+  GetComponentCapabilityParams() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(b86d955ab051a0a3, 0, 1)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct PluginRuntime::GetComponentCapabilityResults {
+  GetComponentCapabilityResults() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(f06938a4191a874a, 0, 1)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
 struct AdapterInfo {
   AdapterInfo() = delete;
 
@@ -187,6 +221,8 @@ public:
       ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
   ::capnp::Request< ::rpp::runtime::PluginRuntime::ListAdaptersParams,  ::rpp::runtime::PluginRuntime::ListAdaptersResults> listAdaptersRequest(
       ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
+  ::capnp::Request< ::rpp::runtime::PluginRuntime::GetComponentCapabilityParams,  ::rpp::runtime::PluginRuntime::GetComponentCapabilityResults> getComponentCapabilityRequest(
+      ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
 
 protected:
   Client() = default;
@@ -215,6 +251,10 @@ protected:
   typedef  ::rpp::runtime::PluginRuntime::ListAdaptersResults ListAdaptersResults;
   typedef ::capnp::CallContext<ListAdaptersParams, ListAdaptersResults> ListAdaptersContext;
   virtual ::kj::Promise<void> listAdapters(ListAdaptersContext context);
+  typedef  ::rpp::runtime::PluginRuntime::GetComponentCapabilityParams GetComponentCapabilityParams;
+  typedef  ::rpp::runtime::PluginRuntime::GetComponentCapabilityResults GetComponentCapabilityResults;
+  typedef ::capnp::CallContext<GetComponentCapabilityParams, GetComponentCapabilityResults> GetComponentCapabilityContext;
+  virtual ::kj::Promise<void> getComponentCapability(GetComponentCapabilityContext context);
 
   inline  ::rpp::runtime::PluginRuntime::Client thisCap() {
     return ::capnp::Capability::Server::thisCap()
@@ -663,6 +703,173 @@ private:
 };
 #endif  // !CAPNP_LITE
 
+class PluginRuntime::GetComponentCapabilityParams::Reader {
+public:
+  typedef GetComponentCapabilityParams Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline bool hasName() const;
+  inline  ::capnp::Text::Reader getName() const;
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class PluginRuntime::GetComponentCapabilityParams::Builder {
+public:
+  typedef GetComponentCapabilityParams Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline bool hasName();
+  inline  ::capnp::Text::Builder getName();
+  inline void setName( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initName(unsigned int size);
+  inline void adoptName(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownName();
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class PluginRuntime::GetComponentCapabilityParams::Pipeline {
+public:
+  typedef GetComponentCapabilityParams Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class PluginRuntime::GetComponentCapabilityResults::Reader {
+public:
+  typedef GetComponentCapabilityResults Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline bool hasPluginRef() const;
+#if !CAPNP_LITE
+  inline  ::capnp::Capability::Client getPluginRef() const;
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class PluginRuntime::GetComponentCapabilityResults::Builder {
+public:
+  typedef GetComponentCapabilityResults Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline bool hasPluginRef();
+#if !CAPNP_LITE
+  inline  ::capnp::Capability::Client getPluginRef();
+  inline void setPluginRef( ::capnp::Capability::Client&& value);
+  inline void setPluginRef( ::capnp::Capability::Client& value);
+  inline void adoptPluginRef(::capnp::Orphan< ::capnp::Capability>&& value);
+  inline ::capnp::Orphan< ::capnp::Capability> disownPluginRef();
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class PluginRuntime::GetComponentCapabilityResults::Pipeline {
+public:
+  typedef GetComponentCapabilityResults Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+  inline  ::capnp::Capability::Client getPluginRef();
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
 class AdapterInfo::Reader {
 public:
   typedef AdapterInfo Reads;
@@ -828,6 +1035,79 @@ inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::AdapterInfo,  ::capnp::Ki
   return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::AdapterInfo,  ::capnp::Kind::STRUCT>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
+
+inline bool PluginRuntime::GetComponentCapabilityParams::Reader::hasName() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool PluginRuntime::GetComponentCapabilityParams::Builder::hasName() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader PluginRuntime::GetComponentCapabilityParams::Reader::getName() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder PluginRuntime::GetComponentCapabilityParams::Builder::getName() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void PluginRuntime::GetComponentCapabilityParams::Builder::setName( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder PluginRuntime::GetComponentCapabilityParams::Builder::initName(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void PluginRuntime::GetComponentCapabilityParams::Builder::adoptName(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::GetComponentCapabilityParams::Builder::disownName() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+
+inline bool PluginRuntime::GetComponentCapabilityResults::Reader::hasPluginRef() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool PluginRuntime::GetComponentCapabilityResults::Builder::hasPluginRef() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+#if !CAPNP_LITE
+inline  ::capnp::Capability::Client PluginRuntime::GetComponentCapabilityResults::Reader::getPluginRef() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Capability>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Capability::Client PluginRuntime::GetComponentCapabilityResults::Builder::getPluginRef() {
+  return ::capnp::_::PointerHelpers< ::capnp::Capability>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Capability::Client PluginRuntime::GetComponentCapabilityResults::Pipeline::getPluginRef() {
+  return  ::capnp::Capability::Client(_typeless.getPointerField(0).asCap());
+}
+inline void PluginRuntime::GetComponentCapabilityResults::Builder::setPluginRef( ::capnp::Capability::Client&& cap) {
+  ::capnp::_::PointerHelpers< ::capnp::Capability>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(cap));
+}
+inline void PluginRuntime::GetComponentCapabilityResults::Builder::setPluginRef( ::capnp::Capability::Client& cap) {
+  ::capnp::_::PointerHelpers< ::capnp::Capability>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), cap);
+}
+inline void PluginRuntime::GetComponentCapabilityResults::Builder::adoptPluginRef(
+    ::capnp::Orphan< ::capnp::Capability>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Capability>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Capability> PluginRuntime::GetComponentCapabilityResults::Builder::disownPluginRef() {
+  return ::capnp::_::PointerHelpers< ::capnp::Capability>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+#endif  // !CAPNP_LITE
 
 inline bool AdapterInfo::Reader::hasName() const {
   return !_reader.getPointerField(

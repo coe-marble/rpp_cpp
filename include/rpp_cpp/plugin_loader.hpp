@@ -9,7 +9,7 @@
 
 #include "plugin_def.hpp"
 #include "data_model.hpp"
-#include "adapter_info.hpp"
+#include "adapter_bases.hpp"
 #include "rpp_paths.hpp"
 #include "capnp/ez-rpc.h"
 #include "parameter_description.hpp"
@@ -114,10 +114,10 @@ RppPtr<Plugin> load_cpp_plugin_from_shared_library(
 
 RppPtr<ClientAdapter> load_plugin_adapter_client(
         const PluginInfo& info,
-        const std::string& host,
-        uint16_t port,
         const std::string& name = "",
-        const std::string& create_symbol = "create_plugin_client") {
+        const std::string& connection_name = "",
+        const std::string& create_symbol = "create_plugin_client"
+    ) {
     ClientAdapterParams info_adapter;
     if (name.empty()) {
         info_adapter.name = info.plugin_name + "_adapter_client";
@@ -125,8 +125,13 @@ RppPtr<ClientAdapter> load_plugin_adapter_client(
     else {
         info_adapter.name = name;
     }
-    info_adapter.host = host;
-    info_adapter.port = port;
+    if (connection_name.empty()) {
+        info_adapter.connection_name = info.plugin_name + "_connection";
+    }
+    else {
+        info_adapter.connection_name = connection_name;
+    }
+
     auto client = load_from_shared_library__<ClientAdapter>(
             info.plugin_type_shared_library_path, create_symbol);
     auto result = client->configure_adapter_client__(
@@ -142,9 +147,8 @@ RppPtr<ClientAdapter> load_plugin_adapter_client(
 RppPtr<ServerAdapter> load_plugin_adapter_server(
         const PluginInfo& info,
         RppPtr<Plugin>&& plugin_ptr,
-        const std::string& host,
-        uint16_t port,
         const std::string& name = "",
+        const std::string& connection_name = "",
         const std::string& create_symbol = "create_plugin_server") {
 
     auto server_ptr = load_from_shared_library__<ServerAdapter>(
@@ -159,8 +163,13 @@ RppPtr<ServerAdapter> load_plugin_adapter_server(
     else {
         info_adapter.name = name;
     }
-    info_adapter.host = host;
-    info_adapter.port = port;
+    if (connection_name.empty()) {
+        info_adapter.connection_name = info.plugin_name + "_connection";
+    }
+    else {
+        info_adapter.connection_name = connection_name;
+    }
+
     bool result = server_ptr->configure_adapter_server__(
             std::make_shared<ServerAdapterParams>(std::move(info_adapter)));
 
@@ -173,7 +182,9 @@ RppPtr<ServerAdapter> load_plugin_adapter_server(
 
 template <typename BaseType>
 RppPtr<typename BaseType::AdapterClient> load_plugin_adapter_client(
-    const std::string& host, uint16_t port, const std::string& name = "") {
+    const std::string& name = "",
+    const std::string& connection_name = "")
+{
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.
 
     auto client = std::make_unique<typename BaseType::AdapterClient>();
@@ -185,10 +196,13 @@ RppPtr<typename BaseType::AdapterClient> load_plugin_adapter_client(
     } else {
         info_adapter.name = name;
     }
+    if (connection_name.empty()) {
+        info_adapter.connection_name =
+            client->get_info_adapter_client__().plugin_name + "_connection";
+    } else {
+        info_adapter.connection_name = connection_name;
+    }
     info_adapter.name = name;
-    info_adapter.host = host;
-    info_adapter.port = port;
-
     client->configure_adapter_client__(
         std::make_shared<ClientAdapterParams>(std::move(info_adapter)));
 
@@ -198,8 +212,8 @@ RppPtr<typename BaseType::AdapterClient> load_plugin_adapter_client(
 template <typename PluginBase>
 RppPtr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
         RppPtr<PluginBase>&& plugin_ptr,
-        const std::string& host,
-        uint16_t port, const std::string& name = "") {
+        const std::string& name = "",
+        const std::string& connection_name = "") {
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.
     auto server = std::make_unique<typename PluginBase::AdapterServer>();
 
@@ -218,9 +232,12 @@ RppPtr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
     } else {
         info.name = name;
     }
+    if (connection_name.empty()) {
+        info.connection_name = server->get_info_adapter_server__().plugin_name + "_connection";
+    } else {
+        info.connection_name = connection_name;
+    }
 
-    info.host = host;
-    info.port = port;
     server->configure_adapter_server__(std::make_shared<ServerAdapterParams>(std::move(info)));
 
     return server;

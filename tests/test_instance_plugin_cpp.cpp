@@ -46,11 +46,12 @@ protected:
     }
 
     void thread_run(rpp::ServerAdapter* server_adapter,
-        std::atomic<bool>* server_ready, std::atomic<bool>* shutdown)
+        std::atomic<bool>* server_ready, std::atomic<bool>* shutdown,
+        const std::string& host, uint16_t port)
     {
         auto io = kj::setupAsyncIo();
 
-        server_adapter->start_adapter_server__(io);
+        server_adapter->start_adapter_server__(io, host, port);
 
         server_ready->store(true);
 
@@ -121,7 +122,9 @@ TEST_F(TestSuite, TestSimpleInstancePlugin) {
 
     rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
 
-    auto plugin = rpp::load_cpp_plugin_from_shared_library<rpp_testing::MotionController2D>(plugin_info);
+    auto plugin =
+        rpp::load_cpp_plugin_from_shared_library
+            <rpp_testing::MotionController2D>(plugin_info);
 
     auto parameter_desc = rpp::load_cpp_plugin_parameters_description(plugin_info);
 
@@ -168,8 +171,8 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
         ASSERT_TRUE(plugin_info.plugin_name == plugin_name);
 
         auto instance =
-            rpp::load_cpp_plugin_from_shared_library<rpp_testing::MotionController2D>(
-                plugin_info);
+            rpp::load_cpp_plugin_from_shared_library
+                <rpp_testing::MotionController2D>(plugin_info);
 
         auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
         odom_msg.pose().position().x() = 6.0;
@@ -179,9 +182,9 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
 
         auto server_adapter =
             rpp::load_plugin_adapter_server<rpp_testing::MotionController2D>(
-                std::move(instance), host, port);
+                std::move(instance));
         try{
-            thread_run(server_adapter.get(), &server_ready, &shutdown);
+            thread_run(server_adapter.get(), &server_ready, &shutdown, host, port);
         }
         catch (const std::exception& e) {
             FAIL() << "Exception in server thread: " << e.what();
@@ -190,12 +193,6 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
             FAIL() << "Unknown exception in server thread.";
         }
     });
-
-
-    auto plugin_client = \
-        rpp::load_plugin_adapter_client<rpp_testing::MotionController2D>(host, port);
-
-    ASSERT_TRUE(plugin_client != nullptr);
 
     int max_wait_time_ms = 1000; // Maksimalno vrijeme čekanja u milisekundama
     while (!server_ready) {
@@ -206,7 +203,13 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
         }
     }
 
-    plugin_client->connect_adapter_client__();
+    rpp::ClientContext context(host, port);
+    auto plugin_client = \
+        rpp::load_plugin_adapter_client<rpp_testing::MotionController2D>();
+
+    ASSERT_TRUE(plugin_client != nullptr);
+
+    plugin_client->connect_adapter_client__(context);
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
     odom_msg.pose().position().x() = 1.0;
@@ -229,7 +232,6 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
 }
 
 
-
 TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimpleCpp";
@@ -244,25 +246,23 @@ TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
         // Kreiramo stvarni plugin i omotamo ga u server adapter
         ASSERT_TRUE(plugin_info.plugin_name == plugin_name);
         auto instance = rpp::load_cpp_plugin_from_shared_library(plugin_info);
-        auto server_adapter = rpp::load_plugin_adapter_server(plugin_info, std::move(instance), host, port);
-        thread_run(server_adapter.get(), &server_ready, &shutdown);
+        auto server_adapter = rpp::load_plugin_adapter_server(plugin_info, std::move(instance));
+        thread_run(server_adapter.get(), &server_ready, &shutdown, host, port);
     });
 
-
-    auto plugin_client_raw = \
-        rpp::load_plugin_adapter_client(plugin_info, host, port);
-
-
-    ASSERT_TRUE(plugin_client_raw != nullptr);
-    int max_wait_time_ms = 1000; // Maksimalno vrijeme čekanja u milisekundama
+    int max_wait_time_ms = 5000;
     while (!server_ready) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         max_wait_time_ms -= 10;
         if (max_wait_time_ms <= 0) {
-            FAIL() << "Server not ready after waiting for 1 second.";
+            FAIL() << "Server not ready after waiting for 5 seconds.";
         }
     }
-    plugin_client_raw->connect_adapter_client__();
+    rpp::ClientContext context(host, port);
+    auto plugin_client_raw = \
+    rpp::load_plugin_adapter_client(plugin_info);
+    ASSERT_TRUE(plugin_client_raw != nullptr);
+    plugin_client_raw->connect_adapter_client__(context);
     auto plugin_client = dynamic_cast<rpp_testing::MotionController2D*>(plugin_client_raw.get());
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
@@ -289,22 +289,20 @@ TEST_F(TestSuite, TestPluginAdapterWithPythonPlugin) {
     std::string plugin_name = "test_lib::ComponentPluginSimplePy";
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
-    uint16_t runtime_port = get_available_port();
 
     rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
 
 
-    auto plugin_client_raw = \
-        rpp::load_plugin_adapter_client(plugin_info, host, port);
 
 
     std::string command = "rpp_component_server_python"
         " --host " + host +
-        " --plugin-port " + std::to_string(port) +
-        " --runtime-port " + std::to_string(runtime_port) +
+        " --port " + std::to_string(port) +
         " --plugin " + plugin_name +
         " --home " + TestSuite::rpp_home_dir +
-        " --component-path " + TestSuite::rpp_home_dir + "/components";
+        " --path " + TestSuite::rpp_home_dir + "/components" +
+        " --name " + "test_name" +
+        " --conn " +  "test_connection";
 
 
     std::thread server_thread([command]() {
@@ -312,10 +310,16 @@ TEST_F(TestSuite, TestPluginAdapterWithPythonPlugin) {
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    plugin_client_raw->connect_adapter_client__();
+
+    rpp::ClientContext context(host, port);
+
+    auto plugin_client_raw = \
+        rpp::load_plugin_adapter_client(plugin_info, "test_name", "test_connection");
+
+    plugin_client_raw->connect_adapter_client__(context);
 
     auto plugin_client = dynamic_cast<rpp_testing::MotionController2D*>(plugin_client_raw.get());
-    auto runtime_client = std::make_unique<rpp::PluginRuntimeClient>(host, runtime_port);
+    auto runtime_client = std::make_unique<rpp::PluginRuntimeClient>(context);
     ASSERT_TRUE(plugin_client != nullptr);
     ASSERT_TRUE(runtime_client != nullptr);
 
@@ -343,37 +347,58 @@ TEST_F(TestSuite, TestPluginRuntimeAdapterLocal)
 {
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
-    uint16_t port_runtime = get_available_port();
 
     auto plugin_info = data_manager->get_plugin_info_from_lib("test_lib::ComponentPluginSimpleCpp");
     std::atomic<bool> server_ready(false);
     std::thread server_thread([&]() {
 
-        rpp::RppServerHost server_host(host, port_runtime);
+        rpp::RppServerHost server_host(host, port);
         auto instance = rpp::load_cpp_plugin_from_shared_library(plugin_info);
         auto server_adapter =
-            rpp::load_plugin_adapter_server(plugin_info, std::move(instance), host, port);
+            rpp::load_plugin_adapter_server(
+                plugin_info, std::move(instance),
+                "test_name", "test_connection_name");
 
         server_host.add_server(std::move(server_adapter));
         server_ready.store(true);
         server_host.run();
     });
 
+    int max_wait_time_ms = 30000;
     while (!server_ready.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        max_wait_time_ms -= 10;
+        if (max_wait_time_ms <= 0) {
+            FAIL() << "Server not ready after waiting for 1 second.";
+        }
     }
 
-    auto client = std::make_unique<rpp::PluginRuntimeClient>(host, port_runtime);
+    rpp::ClientContext context(host, port);
+    auto client_raw = rpp::load_plugin_adapter_client(plugin_info, "test_name", "test_connection_name");
+    client_raw->connect_adapter_client__(context);
 
-    client->ping();
+    auto runtime_client = std::make_unique<rpp::PluginRuntimeClient>(context);
 
-    auto adapter_list = client->listAdapters();
+    auto client = dynamic_cast<rpp_testing::MotionController2D*>(client_raw.get());
+
+    runtime_client->ping();
+
+    auto adapter_list = runtime_client->listAdapters();
 
     ASSERT_EQ(adapter_list.size(), 1);
     ASSERT_EQ(adapter_list[0].plugin_name, "test_lib::ComponentPluginSimpleCpp");
-    ASSERT_EQ(adapter_list[0].name, "test_lib::ComponentPluginSimpleCpp_adapter_server");
+    ASSERT_EQ(adapter_list[0].name, "test_name");
 
-    client->shutdown();
+    rpp_testing::MotionController2D::Odometry2D odom_msg;
+    odom_msg.pose().position().x() = 1.0;
+    odom_msg.pose().position().y() = 2.0;
+    odom_msg.pose().yaw() = 4;
+
+    bool is_valid = client->validate(odom_msg);
+
+    ASSERT_FALSE(is_valid);
+
+    runtime_client->shutdown();
 
 
     server_thread.join();
@@ -464,8 +489,7 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilderWithPythonSubc) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimplePy";
     std::string host = "127.0.0.1";
-    uint16_t plugin_port = get_available_port();
-    uint16_t runtime_port = get_available_port();
+    uint16_t port = get_available_port();
 
     std::string component_folder = TestSuite::test_data_dir + "/test_component_cpp_with_python_subc";
 
@@ -474,10 +498,7 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilderWithPythonSubc) {
         *TestSuite::data_manager,
         component_folder,
         *TestSuite::python_interpreter,
-        host, plugin_port, runtime_port).build();
-
-    
-
+        host, port).build();
 }
 
 

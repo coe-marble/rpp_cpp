@@ -4,22 +4,23 @@
 #include <functional>
 #include <capnp/ez-rpc.h>
 #include "plugin_runtime.capnp.h"
-#include "adapter_info.hpp"
+#include "adapter_bases.hpp"
 
 namespace rpp {
 
 
 class PluginRuntimeServer final : public runtime::PluginRuntime::Server
 {
-
-    std::shared_ptr<std::vector<std::shared_ptr<ServerAdapter>>> adapters_;
+    using ServerAdapterPtr = std::shared_ptr<ServerAdapter>;
+    using ServerAdapterMap = std::map<std::string, ServerAdapterPtr>;
+    std::shared_ptr<ServerAdapterMap> adapters_;
     std::function<void()> on_shutdown_callback_;
 
 public:
     PluginRuntimeServer() = default;
 
-    void set_adapters(const std::vector<std::shared_ptr<ServerAdapter>>& adapters) {
-        adapters_ = std::make_shared<std::vector<std::shared_ptr<ServerAdapter>>>(adapters);
+    void set_adapters(const ServerAdapterMap& adapters) {
+        adapters_ = std::make_shared<ServerAdapterMap>(adapters);
     }
 
     void set_on_shutdown_callback(std::function<void()> callback) {
@@ -43,9 +44,11 @@ public:
     ::kj::Promise<void> listAdapters(ListAdaptersContext context) override {
         // Implement the listAdapters method logic here
         auto adapter_infos = context.getResults().initAdapters(adapters_->size());
-        for (size_t i = 0; i < adapters_->size(); ++i) {
-            auto adapter_info = adapter_infos[i];
-            auto server_info = adapters_->at(i)->get_info_adapter_server__();
+        int index = 0;
+        for (auto& [name, adapter] : *adapters_) {
+            auto server_info = adapter->get_info_adapter_server__();
+            auto adapter_info = adapter_infos[index++];
+            (void)name; // Suppress unused variable warning
             adapter_info.setName(server_info.name);
             adapter_info.setPluginName(server_info.plugin_name);
             adapter_info.setPluginType(server_info.plugin_type);
@@ -53,37 +56,46 @@ public:
         }
         return ::kj::READY_NOW;
     }
+
+    ::kj::Promise<void> getComponentCapability(GetComponentCapabilityContext context) override {
+        std::string connection_name = context.getParams().getName();
+        if (adapters_->find(connection_name) != adapters_->end()) {
+            auto adapter = (*adapters_)[connection_name];
+            auto capability = adapter->create_capability_adapter_server__();
+            context.getResults().setPluginRef(capability);
+        } else {
+            KJ_FAIL_REQUIRE("Adapter with connection name '" + connection_name + "' not found.");
+        }
+        return ::kj::READY_NOW;
+    }
+
 };
 
 class PluginRuntimeClient final
 {
 private:
-    std::string host_;
-    uint16_t port_;
-    std::unique_ptr<capnp::EzRpcClient> client_;
+    const kj::AsyncIoContext& io_context_;
     runtime::PluginRuntime::Client backend_;
+
 public:
-    PluginRuntimeClient(std::string host, uint16_t port)
-        : host_(std::move(host)),
-          port_(port),
-          client_(nullptr),
-          backend_(nullptr)
+
+    PluginRuntimeClient(const ClientContext& context)
+        : io_context_(context.get_io_context()),
+          backend_(context.get_client().castAs<rpp::runtime::PluginRuntime>())
     {
-        client_ = std::make_unique<capnp::EzRpcClient>(host_, port_);
-        backend_ = std::move(client_->getMain<runtime::PluginRuntime>());
     }
 
     void ping () {
-        backend_.pingRequest().send().wait(client_->getWaitScope());
+        backend_.pingRequest().send().wait(io_context_.waitScope);
     }
 
     void shutdown () {
-        backend_.shutdownRequest().send().wait(client_->getWaitScope());
+        backend_.shutdownRequest().send().wait(io_context_.waitScope);
     }
 
     std::vector<rpp::ServerAdapterInfo> listAdapters () {
         auto request = backend_.listAdaptersRequest();
-        auto response = request.send().wait(client_->getWaitScope());
+        auto response = request.send().wait(io_context_.waitScope);
         auto adapters = response.getAdapters();
         std::vector<rpp::ServerAdapterInfo> adapter_infos;
         for (auto adapter : adapters) {

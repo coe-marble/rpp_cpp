@@ -45,14 +45,11 @@ public:
     static std::string test_lib;
     static std::string test_data_dir;
     static bool initialization_successful;
-    static std::unique_ptr<pybind11::scoped_interpreter> python_interpreter;
 
 protected:
     static void SetUpTestSuite() {
         test_lib = "test_lib";
         test_data_dir = std::getenv("TEST_DATA_DIR");
-        python_interpreter =
-            std::make_unique<pybind11::scoped_interpreter>();
         initialization_successful = true;
     }
 
@@ -64,7 +61,6 @@ protected:
 
 std::string TestParameters::test_lib = "";
 std::string TestParameters::test_data_dir = "";
-std::unique_ptr<pybind11::scoped_interpreter> TestParameters::python_interpreter = nullptr;
 bool TestParameters::initialization_successful = false;
 
 TEST_F(TestParameters, TestParameterStructReflection) {
@@ -261,7 +257,7 @@ TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
 
 TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
     auto parameter_handler = std::make_unique<rpp::params::ParameterHandler>(
-        test_data_dir + "/test_component", *python_interpreter);
+        test_data_dir + "/test_component");
 
     auto loaded_params = parameter_handler->load_parameters_from_python_module();
 
@@ -339,7 +335,7 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
 TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
 
     auto parameter_handler = std::make_unique<rpp::params::ParameterHandler>(
-        test_data_dir + "/test_component", *python_interpreter);
+        test_data_dir + "/test_component");
 
     ParametersDescription parameters
     {

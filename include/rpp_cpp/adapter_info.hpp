@@ -2,9 +2,8 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <functional>
 #include "plugin_def.hpp"
-
-
 
 namespace rpp {
 

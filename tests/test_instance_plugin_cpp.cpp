@@ -27,7 +27,6 @@ public:
     static std::string test_data_dir;
     static std::unique_ptr<rpp::RppDataManager> data_manager;
     static bool initialization_successful;
-    static std::unique_ptr<pybind11::scoped_interpreter> python_interpreter;
 
 protected:
     static void SetUpTestSuite() {
@@ -36,8 +35,6 @@ protected:
         test_data_dir = std::getenv("TEST_DATA_DIR");
         test_lib = "test_lib";
         data_manager = std::make_unique<rpp::RppDataManager>(rpp_home_dir);
-        python_interpreter =
-            std::make_unique<pybind11::scoped_interpreter>();
         initialization_successful = true;
     }
 
@@ -73,7 +70,6 @@ std::unique_ptr<rpp::RppDataManager> TestSuite::data_manager = nullptr;
 std::string TestSuite::test_lib = "";
 std::string TestSuite::test_data_dir = "";
 std::string TestSuite::rpp_home_dir = "";
-std::unique_ptr<pybind11::scoped_interpreter> TestSuite::python_interpreter = nullptr;
 bool TestSuite::initialization_successful = false;
 
 
@@ -423,20 +419,19 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilder)
 
     auto context = rpp::ComponentContextBuilder(
         *TestSuite::data_manager,
-        component_folder,
-        *TestSuite::python_interpreter).build();
+        component_folder).build();
 
     auto subcomponent_list = context.list_subcomponents();
     ASSERT_EQ(subcomponent_list.size(), 1);
     ASSERT_EQ(subcomponent_list[0], "ctl1");
 
-    auto& subcomponent = context.get_component<rpp_testing::MotionController2D>("ctl1");
+    auto subcomponent = context.get_component<rpp_testing::MotionController2D>("ctl1");
 
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
     odom_msg.pose().position().y() = 2.0;
     odom_msg.pose().yaw() = 1.57;
-    auto result = subcomponent.step(odom_msg, 0.1);
+    auto result = subcomponent->step(odom_msg, 0.1);
     ASSERT_DOUBLE_EQ(result.x(), 3.0);
     ASSERT_DOUBLE_EQ(result.y(), 1.0);
 
@@ -489,16 +484,13 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilderWithPythonSubc) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimplePy";
     std::string host = "127.0.0.1";
-    uint16_t port = get_available_port();
 
     std::string component_folder = TestSuite::test_data_dir + "/test_component_cpp_with_python_subc";
 
 
     auto context = rpp::ComponentContextBuilder(
         *TestSuite::data_manager,
-        component_folder,
-        *TestSuite::python_interpreter,
-        host, port).build();
+        component_folder).build();
 }
 
 

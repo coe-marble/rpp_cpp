@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 #include "context.hpp"
 #include "parameter_handler.hpp"
@@ -7,28 +8,23 @@
 
 namespace rpp {
 
-    class __attribute__((visibility("hidden")))
-    ComponentContextBuilder {
+    class ComponentContextBuilder {
 
         std::string component_path_;
+        std::shared_ptr<rpp::RppDataManager> data_manager_own_;
         rpp::RppDataManager& data_manager_;
-        pybind11::scoped_interpreter& python_interpreter_;
-        std::string host_;
-        uint16_t plugin_port_;
-        uint16_t runtime_port_;
 
     public:
         ComponentContextBuilder(rpp::RppDataManager& data_manager,
-            const std::string& component_path,
-            pybind11::scoped_interpreter& python_interpreter,
-            const std::string& host = "", uint16_t plugin_port = 0,
-            uint16_t runtime_port = 0)
+            const std::string& component_path)
             : component_path_(component_path),
-              data_manager_(data_manager),
-              python_interpreter_(python_interpreter),
-              host_(host),
-              plugin_port_(plugin_port),
-              runtime_port_(runtime_port) {}
+              data_manager_own_(nullptr),
+              data_manager_(data_manager){}
+
+        explicit ComponentContextBuilder(const std::string& component_path)
+            : component_path_(component_path),
+              data_manager_own_(std::make_shared<rpp::RppDataManager>()),
+              data_manager_(*data_manager_own_.get()){}
 
         virtual ~ComponentContextBuilder() = default;
 
@@ -44,40 +40,51 @@ namespace rpp {
             std::string component_path;
         };
 
-        using SubcomponentAdaptersMap = std::map<std::string, std::vector<SubcomponentAdapter>>;
+        using SubcomponentAdaptersMap =
+            std::map<std::string, std::vector<SubcomponentAdapter>>;
 
-        ComponentContext build_for_component(std::string component_path, bool is_subcomponent = false) const
+        ComponentRecord resolve_component(
+            const std::string& component_path,
+            const std::string& parent_component_path,
+            const std::string& plugin_name = "") const
         {
             auto component_record = data_manager_.load_component_info(component_path);
             if (std::holds_alternative<LinkedComponentRecord>(component_record)) {
-                throw std::runtime_error("Linked components are not supported in this context builder.");
+                auto linked_record = std::get<LinkedComponentRecord>(component_record);
+                if (plugin_name.empty()) {
+                    throw std::runtime_error(
+                        "Plugin name must be provided for linked components.");
+                }
+                auto linked_component_path = data_manager_.get_linked_component_folder_path(
+                    parent_component_path, plugin_name, linked_record.linked_component_id);
+                auto linked_component_record =
+                    data_manager_.load_component_info(linked_component_path);
+                if (std::holds_alternative<ComponentRecord>(linked_component_record)) {
+                    return std::get<ComponentRecord>(linked_component_record);
+                }
+                else {
+                    throw std::runtime_error("Doubly linked components are not supported.");
+                }
             }
             else if (std::holds_alternative<ComponentRecord>(component_record)) {
+                return std::get<ComponentRecord>(component_record);
             }
             else {
                 throw std::runtime_error("Invalid component record type.");
             }
-            rpp::ComponentRecord record = std::get<ComponentRecord>(component_record);
-            rpp::PluginInfo plugin_info =
-                data_manager_.get_plugin_info_from_lib(record.plugin_name);
-
-            // SubcomponentAdaptersMap subcomponent_adapters;
-            // if (plugin_info.source_language == "cpp")
-            return handle_cpp_subcomponent(record, plugin_info, component_path);
-            // return handle_adapter_subcomponent(record, plugin_info, component_path, subcomponent_adapters);
         }
 
-        ComponentContext handle_cpp_subcomponent(
+        ComponentContext handle_cpp_component(
             const rpp::ComponentRecord& record,
             const rpp::PluginInfo& plugin_info,
-            const std::string& component_path) const
+            const std::string& parent_component_path) const
         {
             auto instance =
                 rpp::load_cpp_plugin_from_shared_library(plugin_info);
             std::unique_ptr<rpp::params::Parameters> params;
             {
                 // In scope to ensure ParameterHandler is destroyed before returning
-                params::ParameterHandler parameter_handler(component_path, python_interpreter_);
+                params::ParameterHandler parameter_handler(record.folder);
                 auto params_module = parameter_handler.load_parameters_from_python_module();
                 params::ParameterHandler::resolve_params(
                     plugin_info.plugin_metadata.parameters, params_module, params);
@@ -86,13 +93,35 @@ namespace rpp {
             std::map<std::string, rpp::ComponentContext> subcomponents;
             for (const auto& [slot_name, subcomponent_info] : record.subcomponents) {
                 auto subcomponent_path = data_manager_
-                    .get_subcomponent_folder_path(component_path, subcomponent_info.id);
+                    .get_subcomponent_folder_path(record.folder, subcomponent_info.id);
                 subcomponents.try_emplace(slot_name,
-                    std::move(build_for_component(subcomponent_path, true)));
+                    std::move(build_for_component(
+                        subcomponent_path, parent_component_path,
+                        subcomponent_info.plugin_name)));
             }
             return ComponentContext(
                 std::move(instance), std::move(*params), std::move(subcomponents));
 
+        }
+
+        ComponentContext build_for_component(
+            std::string component_path,
+            std::string parent_component_path = "",
+            std::string plugin_name = "") const
+        {
+            if (parent_component_path.empty()) {
+                parent_component_path = component_path;
+            }
+            auto record = resolve_component(component_path,
+                parent_component_path, plugin_name);
+
+            rpp::PluginInfo plugin_info =
+                data_manager_.get_plugin_info_from_lib(record.plugin_name);
+            // SubcomponentAdaptersMap subcomponent_adapters;
+            // if (plugin_info.source_language == "cpp")
+            return handle_cpp_component(record,
+                plugin_info, parent_component_path);
+            // return handle_adapter_subcomponent(record, plugin_info, component_path, subcomponent_adapters);
         }
 
         // ComponentContext handle_adapter_subcomponent(
@@ -127,5 +156,4 @@ namespace rpp {
         }
 
     };
-
 } /// namespace rpp

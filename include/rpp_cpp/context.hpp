@@ -5,6 +5,8 @@
 #include "plugin_def.hpp"
 #include "parameters.hpp"
 #include <functional>
+#include "logger.hpp"
+#include "clock.hpp"
 
 namespace rpp {
 
@@ -15,9 +17,12 @@ namespace rpp {
 
     private:
         using PluginPtr = std::unique_ptr<Plugin, std::function<void(Plugin*)>>;
+        using PluginPtrShared = std::shared_ptr<Plugin>;
         params::Parameters parameters_;
         std::map<std::string, ComponentContext> subcomponents_;
-        PluginPtr instance_;
+        PluginPtrShared instance_;
+        std::shared_ptr<rpp::RppLogger> logger_;
+        std::shared_ptr<rpp::RppClock> clock_;
 
         ComponentContext(
             PluginPtr&& instance,
@@ -25,7 +30,10 @@ namespace rpp {
             std::map<std::string, ComponentContext>&& subcomponents)
                 : parameters_(std::move(parameters)),
                   subcomponents_(std::move(subcomponents)),
-                  instance_(std::move(instance)) {}
+                  instance_(std::move(instance)),
+                  logger_(std::make_shared<rpp::RppLogger>()),
+                  clock_(std::make_shared<rpp::RppClock>())
+            {}
     public:
         virtual ~ComponentContext() = default;
         ComponentContext(ComponentContext&& other) noexcept = default;
@@ -34,6 +42,15 @@ namespace rpp {
         // Forbid copy construction and copy assignment
         ComponentContext(const ComponentContext&) = delete;
         ComponentContext& operator=(const ComponentContext&) = delete;
+
+
+        std::shared_ptr<rpp::RppLogger> get_logger() const{
+            return logger_;
+        }
+
+        std::shared_ptr<rpp::RppClock> get_clock() const{
+            return clock_;
+        }
 
         template <typename T>
         T get_parameter(const std::string& name) const
@@ -45,7 +62,7 @@ namespace rpp {
         }
 
         template <typename T>
-        T& get_component(const std::string& name)
+        std::shared_ptr<T> get_component(const std::string& name) const
         {
             if (subcomponents_.find(name) == subcomponents_.end()) {
                 throw std::runtime_error("Subcomponent '" + name + "' not found.");
@@ -63,13 +80,13 @@ namespace rpp {
         }
 
         template <typename T>
-        T& get_instance() const
+        std::shared_ptr<T> get_instance() const
         {
-            T* instance_ptr = dynamic_cast<T*>(instance_.get());
-            if (!instance_ptr) {
-                throw std::runtime_error("Failed to cast plugin instance to the requested type.");
+            auto casted_instance = std::static_pointer_cast<T>(instance_);
+            if (!casted_instance) {
+                throw std::runtime_error("Failed to cast instance to the requested type.");
             }
-            return *instance_ptr;
+            return casted_instance;
         }
 
         const ComponentContext& get_subcomponent_context(const std::string& name) const

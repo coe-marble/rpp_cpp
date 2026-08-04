@@ -11,7 +11,6 @@
 #include "data_model.hpp"
 #include "adapter_bases.hpp"
 #include "rpp_paths.hpp"
-#include "capnp/ez-rpc.h"
 #include "parameter_description.hpp"
 
 
@@ -19,6 +18,32 @@ namespace rpp {
 
 template <typename BaseType>
 using RppPtr = std::unique_ptr<BaseType, std::function<void(BaseType*)>>;
+
+
+RppPtr<params::RppParameters_T> load_cpp_plugin_parameters_description(
+    const PluginInfo& info,
+    const std::string& create_symbol = "get_plugin_parameters_description");
+
+RppPtr<params::RppComponents_T> load_cpp_plugin_component_spec(
+    const PluginInfo& info,
+    const std::string& create_symbol = "get_plugin_components");
+
+RppPtr<Plugin> load_cpp_plugin_from_shared_library(
+    const PluginInfo& info,
+    const std::string& create_symbol = "create_plugin");
+
+RppPtr<ClientAdapter> load_plugin_adapter_client(
+        const PluginInfo& info,
+        const std::string& name = "",
+        const std::string& connection_name = "",
+        const std::string& create_symbol = "create_plugin_client");
+
+RppPtr<ServerAdapter> load_plugin_adapter_server(
+        const PluginInfo& info,
+        RppPtr<Plugin>&& plugin_ptr,
+        const std::string& name = "",
+        const std::string& connection_name = "",
+        const std::string& create_symbol = "create_plugin_server");
 
 template <typename BaseType>
 RppPtr<BaseType> load_from_shared_library__(
@@ -80,21 +105,6 @@ RppPtr<BaseType> load_from_shared_library__(
     }
 }
 
-RppPtr<params::RppParameters_T> load_cpp_plugin_parameters_description(
-    const PluginInfo& info,
-    const std::string& create_symbol = "get_plugin_parameters_description") {
-    auto plugin_ptr = load_from_shared_library__<params::RppParameters_T>(
-        info.plugin_shared_library_path, create_symbol, false, true);
-    return plugin_ptr;
-}
-
-RppPtr<params::RppComponents_T> load_cpp_plugin_component_spec(
-    const PluginInfo& info,
-    const std::string& create_symbol = "get_plugin_components") {
-    auto plugin_ptr = load_from_shared_library__<params::RppComponents_T>(
-        info.plugin_shared_library_path, create_symbol, false, true);
-    return plugin_ptr;
-}
 
 template <typename PluginBase>
 RppPtr<PluginBase> load_cpp_plugin_from_shared_library(
@@ -102,82 +112,6 @@ RppPtr<PluginBase> load_cpp_plugin_from_shared_library(
     const std::string& create_symbol = "create_plugin") {
     return load_from_shared_library__<PluginBase>(
             info.plugin_shared_library_path, create_symbol);
-}
-
-
-RppPtr<Plugin> load_cpp_plugin_from_shared_library(
-    const PluginInfo& info,
-    const std::string& create_symbol = "create_plugin") {
-    return load_from_shared_library__<Plugin>(
-            info.plugin_shared_library_path, create_symbol);
-}
-
-RppPtr<ClientAdapter> load_plugin_adapter_client(
-        const PluginInfo& info,
-        const std::string& name = "",
-        const std::string& connection_name = "",
-        const std::string& create_symbol = "create_plugin_client"
-    ) {
-    ClientAdapterParams info_adapter;
-    if (name.empty()) {
-        info_adapter.name = info.plugin_name + "_adapter_client";
-    }
-    else {
-        info_adapter.name = name;
-    }
-    if (connection_name.empty()) {
-        info_adapter.connection_name = info.plugin_name + "_connection";
-    }
-    else {
-        info_adapter.connection_name = connection_name;
-    }
-
-    auto client = load_from_shared_library__<ClientAdapter>(
-            info.plugin_type_shared_library_path, create_symbol);
-    auto result = client->configure_adapter_client__(
-            std::make_shared<ClientAdapterParams>(std::move(info_adapter)));
-    if (!result) {
-        throw std::runtime_error("Failed to configure client adapter for plugin: "
-            + info.plugin_name);
-    }
-    return client;
-
-}
-
-RppPtr<ServerAdapter> load_plugin_adapter_server(
-        const PluginInfo& info,
-        RppPtr<Plugin>&& plugin_ptr,
-        const std::string& name = "",
-        const std::string& connection_name = "",
-        const std::string& create_symbol = "create_plugin_server") {
-
-    auto server_ptr = load_from_shared_library__<ServerAdapter>(
-            info.plugin_type_shared_library_path, create_symbol);
-
-    ServerAdapterParams info_adapter;
-    info_adapter.backend = std::move(plugin_ptr);
-    info_adapter.plugin_name = info.plugin_name;
-    if (name.empty()) {
-        info_adapter.name = info.plugin_name + "_adapter_server";
-    }
-    else {
-        info_adapter.name = name;
-    }
-    if (connection_name.empty()) {
-        info_adapter.connection_name = info.plugin_name + "_connection";
-    }
-    else {
-        info_adapter.connection_name = connection_name;
-    }
-
-    bool result = server_ptr->configure_adapter_server__(
-            std::make_shared<ServerAdapterParams>(std::move(info_adapter)));
-
-    if (!result) {
-        throw std::runtime_error("Failed to configure server adapter for plugin: " + info.plugin_name);
-    }
-
-    return server_ptr;
 }
 
 template <typename BaseType>
@@ -228,20 +162,22 @@ RppPtr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
     });
 
     if (name.empty()) {
-        info.name = server->get_info_adapter_server__().plugin_name + "_adapter_server";
+        info.name =
+            server->get_info_adapter_server__().plugin_name + "_adapter_server";
     } else {
         info.name = name;
     }
     if (connection_name.empty()) {
-        info.connection_name = server->get_info_adapter_server__().plugin_name + "_connection";
+        info.connection_name =
+            server->get_info_adapter_server__().plugin_name + "_connection";
     } else {
         info.connection_name = connection_name;
     }
 
-    server->configure_adapter_server__(std::make_shared<ServerAdapterParams>(std::move(info)));
+    server->configure_adapter_server__(
+        std::make_shared<ServerAdapterParams>(std::move(info)));
 
     return server;
 }
-
 
 }  // namespace rpp

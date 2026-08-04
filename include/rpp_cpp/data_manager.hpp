@@ -1,4 +1,4 @@
-# pragma once
+#pragma once
 #include <string>
 #include <vector>
 
@@ -17,6 +17,36 @@ class RppDataManager {
     std::string rpp_home_dir;
 
     using json = nlohmann::json;
+
+    std::string to_snake_case(const std::string& name) const
+    {
+        auto is_special_char = [](char c) {
+            return c == '-' || c == ':' || c == '_';
+        };
+
+        std::string result;
+        for (size_t i = 0; i < name.size(); ++i)
+        {
+            char c = name[i];
+            if (is_special_char(c))
+                result += '_';
+            else if (std::isupper(c))
+            {
+                if (i > 0 && !is_special_char(name[i - 1]))
+                    result += '_';
+                result += std::tolower(c);
+            }
+            else
+                result += c;
+        }
+        return result;
+    }
+
+    std::string get_plugin_id_from_name(const std::string& plugin_name)
+    {
+        return to_snake_case(plugin_name);
+    }
+
 
     json load_json_file(const std::string& path) {
         std::ifstream file(path);
@@ -51,6 +81,7 @@ public:
 
 
     explicit RppDataManager(std::string rpp_home_dir) : rpp_home_dir(std::move(rpp_home_dir)) {}
+    explicit RppDataManager() : rpp_home_dir(RPP_HOME) {}
     ~RppDataManager() = default;
 
 
@@ -63,7 +94,7 @@ public:
             throw std::runtime_error("Failed to open component description file at path: " + description_path);
         }
         auto description_json = json::parse(description_file, nullptr, false);
-        if (description_json.contains("LinkedComponentID")) {
+        if (description_json.contains("LinkedComponentId")) {
             return LinkedComponentRecord::from_json(description_json, component_path);
         }
         else {
@@ -97,6 +128,24 @@ public:
         const std::string& parent_component_path, const std::string& subcomponent_id)
     {
         return parent_component_path + "/subcomponents/" + subcomponent_id;
+    }
+
+    std::string get_linked_component_folder_path(
+        const std::string& parent_component_path,
+        const std::string& plugin_name,
+        const std::string& linked_component_id)
+    {
+        // From parent folder, go 2 levels up, then search from plugin_id
+        // Inside, there should be linked_component_id foder
+        std::string plugin_id = get_plugin_id_from_name(plugin_name);
+
+        std::string full_path = parent_component_path
+            + "/../../" + plugin_id + "/" + linked_component_id;
+
+        if (!std::filesystem::exists(full_path)) {
+            throw std::runtime_error("Linked component folder not found at path: " + full_path);
+        }
+        return full_path;
     }
 };
 

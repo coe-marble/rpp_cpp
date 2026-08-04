@@ -16,21 +16,38 @@ find_package(CapnProto REQUIRED)
 find_package(pybind11 REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Development)
 find_package(pybind11 REQUIRED)
+find_package(rclcpp QUIET)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
+if(rclcpp_FOUND)
+    message(STATUS "--> ROS 2 environment DETECTED. Using rclcpp logging backend.")
+else()
+    message(STATUS "--> ROS 2 NOT detected. Falling back to spdlog backend.")
+    # Search for system-wide spdlog (installed via apt, vcpkg, conan, etc.)
+    find_package(spdlog REQUIRED)
+endif()
+
 # header only library
-add_library(rpp_cpp SHARED src/plugin_runtime.capnp.c++)
+add_library(rpp_cpp SHARED
+  src/plugin_runtime.capnp.c++
+  src/data_model.cpp
+  src/parameter_handler.cpp
+  src/python_helpers.cpp
+  src/rpp_paths.cpp
+  src/plugin_loader.cpp
+)
 target_link_libraries(rpp_cpp
 PUBLIC
   CapnProto::capnp
   CapnProto::capnp-rpc
+PRIVATE
   Python3::Python
   pybind11::embed
-INTERFACE
-  "-rdynamic"
 )
+target_link_options(rpp_cpp PUBLIC "-rdynamic")
+
 set_target_properties(rpp_cpp PROPERTIES
   POSITION_INDEPENDENT_CODE TRUE
 )
@@ -39,9 +56,17 @@ target_include_directories(rpp_cpp
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-PRIVATE
-  ${CapnProto_INCLUDE_DIRS}
 )
+
+if(rclcpp_FOUND)
+    # Define compile-time macro so the header activates the ROS 2 code branch
+    target_compile_definitions(rpp_cpp INTERFACE USE_ROS2_LOGGING)
+    # Link against native ROS 2 libraries
+    target_link_libraries(rpp_cpp INTERFACE rclcpp::rclcpp)
+else()
+    # Link against standard spdlog library
+    target_link_libraries(rpp_cpp INTERFACE spdlog::spdlog)
+endif()
 
 add_executable(component_server_cpp src/component_server.cpp)
 target_include_directories(component_server_cpp PRIVATE include)
@@ -64,15 +89,22 @@ install(CODE "
   ")
 
 
-ament_export_include_directories(include)
 
-ament_export_libraries(rpp_cpp)
 
 install(TARGETS rpp_cpp
+  EXPORT export_rpp_cpp
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+
+ament_export_targets(export_rpp_cpp HAS_LIBRARY_TARGET)
+ament_export_include_directories(include)
+if(rclcpp_FOUND)
+    ament_export_dependencies(CapnProto rclcpp)
+else()
+    ament_export_dependencies(CapnProto)
+endif()
 
 
 set(OVERRIDE_RPP_TEST false)

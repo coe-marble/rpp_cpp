@@ -3,67 +3,95 @@
 #include <chrono>
 #include <memory>
 #include <string>
-
-// Conditional compilation includes wrapped cleanly inside the header
-#if defined(USE_ROS2_COMPILATION) || (defined(__has_include) && __has_include(<rclcpp/rclcpp.hpp>))
-    #ifndef USE_ROS2_COMPILATION
-        #define USE_ROS2_COMPILATION
-    #endif
-    #include <rclcpp/rclcpp.hpp>
-#endif
+#include <stdexcept>
 
 namespace rpp {
 
-class RppClock {
+enum ClockType {
+    RPP_CLOCK_REALTIME=0,
+    RPP_CLOCK_MOCK=1
+};
+
+struct ClockOptions {
+    ClockType type;
+    double initial_time;
+
+    ClockOptions(ClockType clock_type = ClockType::RPP_CLOCK_REALTIME, double init_time = 0.0)
+        : type(clock_type), initial_time(init_time) {}
+
+};
+
+class ClockFactory;
+
+class RppClock
+{
 public:
+    RppClock() = default;
+    virtual double now_seconds() const = 0;
+    virtual uint64_t now_nanoseconds() const = 0;
+};
+
+class RppClockRealTime : public RppClock {
+    friend class ClockFactory;
+private:
     // Default constructor uses standard system clock (or default ROS clock if enabled)
-    RppClock() {
-    #ifdef USE_ROS2_COMPILATION
-        // Fallback to a standard ROS clock instance type (ROS_SYSTEM_TIME by default)
-        ros_clock_ = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
-    #endif
-    }
+    RppClockRealTime();
+public:
 
-    #ifdef USE_ROS2_COMPILATION
-    // Explicit constructor to hook into a specific ROS 2 Node's clock interface
-    // This is critical for getting correct simulation time (use_sim_time)
-    explicit RppClock(rclcpp::Clock::SharedPtr clock_ptr) : ros_clock_(clock_ptr) {}
-    #endif
-
-    ~RppClock() = default;
+    ~RppClockRealTime();
 
     // Returns current timestamp in seconds since epoch as a double
-    double now_seconds() const {
-    #ifdef USE_ROS2_COMPILATION
-        if (ros_clock_) {
-            return ros_clock_->now().seconds();
-        }
-        return 0.0;
-    #else
-        auto now = std::chrono::system_clock::now();
-        auto duration = now.time_since_epoch();
-        return std::chrono::duration<double>(duration).count();
-    #endif
-    }
+    virtual double now_seconds() const;
 
     // Returns current timestamp in nanoseconds as an integer
-    uint64_t now_nanoseconds() const {
-    #ifdef USE_ROS2_COMPILATION
-        if (ros_clock_) {
-            return ros_clock_->now().nanoseconds();
-        }
-        return 0;
-    #else
-        auto now = std::chrono::system_clock::now();
-        auto duration = now.time_since_epoch();
-        return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    #endif
+    virtual uint64_t now_nanoseconds() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> pimpl_;
+};
+
+class RppClockMock : public RppClock {
+    friend class ClockFactory;
+
+public:
+    RppClockMock(double initial_time) : current_time_(initial_time) {}
+
+    void set_time(double new_time) {
+        current_time_ = new_time;
+    }
+
+    double now_seconds() const override {
+        return current_time_;
+    }
+
+    double elapse(double dt) {
+        current_time_ += dt;
+        return current_time_;
+    }
+
+    uint64_t now_nanoseconds() const override {
+        return static_cast<uint64_t>(current_time_ * 1e9);
     }
 
 private:
-#ifdef USE_ROS2_COMPILATION
-    rclcpp::Clock::SharedPtr ros_clock_;
-#endif
+    double current_time_;
+};
+
+class ClockFactory {
+public:
+
+    static std::shared_ptr<RppClock> create_clock(const ClockOptions& options)
+    {
+        switch (options.type) {
+            case ClockType::RPP_CLOCK_REALTIME:
+                return std::shared_ptr<RppClock>(new RppClockRealTime());
+            case ClockType::RPP_CLOCK_MOCK:
+                return std::shared_ptr<RppClock>(new RppClockMock(options.initial_time));
+            default:
+                throw std::invalid_argument("Invalid clock type specified.");
+        }
+    }
 };
 
 } // namespace rpp

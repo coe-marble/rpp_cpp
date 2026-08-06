@@ -10,27 +10,53 @@ namespace rpp {
 
     class ComponentContextBuilder {
 
-        std::string component_path_;
+        std::string parts_folder_;
         std::shared_ptr<rpp::RppDataManager> data_manager_own_;
         rpp::RppDataManager& data_manager_;
+        ClockOptions clock_options_;
 
     public:
         ComponentContextBuilder(rpp::RppDataManager& data_manager,
-            const std::string& component_path)
-            : component_path_(component_path),
-              data_manager_own_(nullptr),
-              data_manager_(data_manager){}
+            const ClockOptions& clock_options = ClockOptions())
+            : data_manager_own_(nullptr),
+              data_manager_(data_manager),
+              clock_options_(clock_options){}
 
-        explicit ComponentContextBuilder(const std::string& component_path)
-            : component_path_(component_path),
-              data_manager_own_(std::make_shared<rpp::RppDataManager>()),
-              data_manager_(*data_manager_own_.get()){}
+        explicit ComponentContextBuilder(const ClockOptions& clock_options = ClockOptions())
+            : data_manager_own_(std::make_shared<rpp::RppDataManager>()),
+              data_manager_(*data_manager_own_.get()),
+              clock_options_(clock_options){}
 
         virtual ~ComponentContextBuilder() = default;
 
-        ComponentContext build() const
+        ComponentContext build_from_component_path(const std::string& component_path)
         {
-            return build_for_component(component_path_);
+            return build_for_component(component_path);
+        }
+
+        ComponentContext build_from_script(
+            const std::string& script_path,
+            const std::string& parts_folder="")
+        {
+            auto script_description = data_manager_.load_script_description(script_path);
+            if (script_description.components.empty()) {
+                throw std::runtime_error("Script description does not contain any components.");
+            }
+            std::map<std::string, ComponentContext> subcomponents;
+            if (parts_folder.empty()) {
+                parts_folder_ = data_manager_.get_default_script_parts_folder_path(script_path);
+            }
+            else {
+                parts_folder_ = parts_folder;
+            }
+
+            for (const auto& [slot_name, components] : script_description.components) {
+                const auto& component = components.front();
+                auto component_path = data_manager_.get_component_path_in_parts_folder(
+                    parts_folder_, component.plugin_name, component.id);
+                subcomponents.try_emplace(slot_name, build_for_component(component_path));
+            }
+            return ComponentContext(std::move(subcomponents), clock_options_);
         }
 
     private:
@@ -100,7 +126,7 @@ namespace rpp {
                         subcomponent_info.plugin_name)));
             }
             return ComponentContext(
-                std::move(instance), std::move(*params), std::move(subcomponents));
+                std::move(instance), std::move(*params), std::move(subcomponents), clock_options_);
 
         }
 

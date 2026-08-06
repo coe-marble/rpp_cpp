@@ -152,4 +152,27 @@ LinkedComponentRecord LinkedComponentRecord::from_json(
     return record;
 }
 
+ScriptDescription ScriptDescription::from_json(
+    const nlohmann::json& j, const std::string& script_path)
+{
+    ScriptDescription description;
+    description.script_path = get_safe_string_from_json(j, "ScriptPath", script_path);
+    description.language = get_safe_string_from_json(j, "Language", "");
+    if (j.contains("Components") && j["Components"].is_object()) {
+        for (auto& [slot_name, components_array] : j["Components"].items()) {
+            if (components_array.is_array()) {
+                std::vector<ScriptComponent> components;
+                for (const auto& comp_json : components_array) {
+                    ScriptComponent component;
+                    component.id = get_safe_string_from_json(comp_json, "Id", "");
+                    component.plugin_name = get_safe_string_from_json(comp_json, "PluginName", "");
+                    components.push_back(component);
+                }
+                description.components[slot_name] = components;
+            }
+        }
+    }
+    return description;
+}
+
 }

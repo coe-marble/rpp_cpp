@@ -14,9 +14,10 @@ private:
         std::map<std::string, ParameterValue> values)
           : values_(std::move(values)) {}
 
+public:
     Parameters()
         : values_() {}
-public:
+
     template<typename T>
     T get(std::string_view name) const
     {

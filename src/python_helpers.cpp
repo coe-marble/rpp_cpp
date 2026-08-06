@@ -4,7 +4,8 @@
 
 namespace rpp {
 
-    pybind11::module_ load_python_module(const std::string& module_path, pybind11::scoped_interpreter& /* guard*/) {
+    pybind11::module_ load_python_module(const std::string& module_path, pybind11::scoped_interpreter& /* guard*/)
+    {
         if (!std::filesystem::exists(module_path)) {
             throw std::runtime_error("Python module not found: " + module_path);
         }
@@ -13,9 +14,22 @@ namespace rpp {
         std::string directory = p.parent_path().string();
         std::string module_name = p.stem().string();
 
+        pybind11::module_::import("importlib").attr("invalidate_caches")();
         pybind11::module_ sys = pybind11::module_::import("sys");
+        sys.attr("dont_write_bytecode") = true;
+
         pybind11::list path = sys.attr("path");
-        path.insert(0, directory);
+
+        bool exists_in_path = false;
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (path[i].cast<std::string>() == directory) {
+                exists_in_path = true;
+                break;
+            }
+        }
+        if (!exists_in_path) {
+            path.insert(0, directory);
+        }
 
         return pybind11::module_::import(module_name.c_str());
     }
@@ -39,6 +53,5 @@ namespace rpp {
             modules.attr("pop")(module_name.c_str());
         }
     }
-
 
 } // namespace rpp

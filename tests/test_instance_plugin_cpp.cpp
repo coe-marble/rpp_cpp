@@ -418,8 +418,8 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilder)
     std::string component_folder = TestSuite::test_data_dir + "/test_component";
 
     auto context = rpp::ComponentContextBuilder(
-        *TestSuite::data_manager,
-        component_folder).build();
+        *TestSuite::data_manager)
+        .build_from_component_path(component_folder);
 
     auto subcomponent_list = context.list_subcomponents();
     ASSERT_EQ(subcomponent_list.size(), 1);
@@ -489,8 +489,8 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilderWithPythonSubc) {
 
 
     auto context = rpp::ComponentContextBuilder(
-        *TestSuite::data_manager,
-        component_folder).build();
+        *TestSuite::data_manager)
+        .build_from_component_path(component_folder);
 }
 
 

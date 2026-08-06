@@ -99,6 +99,22 @@ class LinkedComponentRecord {
         const nlohmann::json& j, const std::string& component_path);
 };
 
+class ScriptDescription {
+    public:
+
+        struct ScriptComponent {
+            std::string id;
+            std::string plugin_name;
+        };
+
+        std::string script_path;
+        std::string language;
+        std::map<std::string, std::vector<ScriptComponent>> components;
+
+    static ScriptDescription from_json(
+        const nlohmann::json& j, const std::string& script_path);
+};
+
 
 inline std::string to_lower_copy(std::string value) {
     for (char& ch : value) {

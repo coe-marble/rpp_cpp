@@ -37,6 +37,8 @@ add_library(rpp_cpp SHARED
   src/python_helpers.cpp
   src/rpp_paths.cpp
   src/plugin_loader.cpp
+  src/clock.cpp
+  src/logger.cpp
 )
 target_link_libraries(rpp_cpp
 PUBLIC

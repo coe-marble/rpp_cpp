@@ -27,12 +27,24 @@ namespace rpp {
         ComponentContext(
             PluginPtr&& instance,
             params::Parameters&& parameters,
-            std::map<std::string, ComponentContext>&& subcomponents)
+            std::map<std::string, ComponentContext>&& subcomponents,
+            const ClockOptions& clock_options)
                 : parameters_(std::move(parameters)),
                   subcomponents_(std::move(subcomponents)),
                   instance_(std::move(instance)),
                   logger_(std::make_shared<rpp::RppLogger>()),
-                  clock_(std::make_shared<rpp::RppClock>())
+                  clock_(ClockFactory::create_clock(clock_options))
+            {}
+
+        // for script-based components that don't have an instance
+        ComponentContext(
+            std::map<std::string, ComponentContext>&& subcomponents,
+            const ClockOptions& clock_options)
+                : parameters_(),
+                subcomponents_(std::move(subcomponents)),
+                instance_(nullptr),
+                logger_(std::make_shared<rpp::RppLogger>()),
+                clock_(ClockFactory::create_clock(clock_options))
             {}
     public:
         virtual ~ComponentContext() = default;
@@ -50,6 +62,16 @@ namespace rpp {
 
         std::shared_ptr<rpp::RppClock> get_clock() const{
             return clock_;
+        }
+
+
+        void initialize() const {
+            if (instance_) {
+                instance_->initialize(*this);
+            }
+            for (auto& [name, subcomponent] : subcomponents_) {
+                subcomponent.initialize();
+            }
         }
 
         template <typename T>

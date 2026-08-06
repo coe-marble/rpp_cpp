@@ -47,7 +47,6 @@ class RppDataManager {
         return to_snake_case(plugin_name);
     }
 
-
     json load_json_file(const std::string& path) {
         std::ifstream file(path);
         if (!file.is_open()) {
@@ -84,6 +83,15 @@ public:
     explicit RppDataManager() : rpp_home_dir(RPP_HOME) {}
     ~RppDataManager() = default;
 
+
+    ScriptDescription load_script_description(const std::string& script_path) {
+        std::ifstream description_file(script_path);
+        if (!description_file.is_open()) {
+            throw std::runtime_error("Failed to open script description file at path: " + script_path);
+        }
+        auto description_json = json::parse(description_file, nullptr, false);
+        return ScriptDescription::from_json(description_json, script_path);
+    }
 
     std::variant<ComponentRecord, LinkedComponentRecord>
         load_component_info(const std::string& component_path)
@@ -128,6 +136,30 @@ public:
         const std::string& parent_component_path, const std::string& subcomponent_id)
     {
         return parent_component_path + "/subcomponents/" + subcomponent_id;
+    }
+
+    std::string get_default_script_parts_folder_path(const std::string& script_path)
+    {
+        // Go up two levels to reach the script's root folder
+        std::filesystem::path script_dir =
+            std::filesystem::path(script_path).parent_path().parent_path();
+        std::filesystem::path parts_dir = script_dir / "parts";
+        return parts_dir.string();
+    }
+
+
+
+    std::string get_component_path_in_parts_folder(
+        const std::string& parts_folder,
+        const std::string& plugin_name,
+        const std::string& component_id)
+    {
+        std::string plugin_id = get_plugin_id_from_name(plugin_name);
+        std::string full_path = parts_folder + "/" + plugin_id + "/" + component_id;
+        if (!std::filesystem::exists(full_path)) {
+            throw std::runtime_error("Component folder not found at path: " + full_path);
+        }
+        return full_path;
     }
 
     std::string get_linked_component_folder_path(

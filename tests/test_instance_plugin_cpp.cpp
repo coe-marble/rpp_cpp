@@ -12,6 +12,7 @@
 #include "rpp_cpp/parameter_handler.hpp"
 
 #include "rpp_plugin_types/rpp_testing/MotionController2D.hpp"
+#include "rpp_plugin_types/rpp_testing/TestInterfaceAll.hpp"
 #include <capnp/message.h>
 #include <capnp/serialize-packed.h>
 #include <capnp/ez-rpc.h>
@@ -71,6 +72,100 @@ std::string TestSuite::test_lib = "";
 std::string TestSuite::test_data_dir = "";
 std::string TestSuite::rpp_home_dir = "";
 bool TestSuite::initialization_successful = false;
+
+
+void check_all_interface_types_plugin_call(
+    rpp_testing::TestInterfaceAll* plugin_client)
+{
+    ASSERT_TRUE(plugin_client != nullptr);
+
+    plugin_client->funcEmpty();
+
+    auto double_result = plugin_client->funcWithSimpleParams(2, true);
+
+    ASSERT_DOUBLE_EQ(double_result, 4.0);
+
+    auto test_struct1 = rpp_schema::rpp_testing::TestStruct1();
+    test_struct1.x() = 1.0;
+    test_struct1.y() = 2.0;
+    test_struct1.theta() = 3.0;
+
+    auto test_struct2 = rpp_schema::rpp_testing::TestStruct2();
+    test_struct2.linear() = 4.0;
+    test_struct2.angular() = 5.0;
+    test_struct2.struct1().x() = 2.0;
+    test_struct2.struct1().y() = 3.0;
+    test_struct2.struct1().theta() = 4.0;
+
+    ASSERT_DOUBLE_EQ(test_struct2.struct1().x(), 2.0);
+    ASSERT_DOUBLE_EQ(test_struct2.struct1().y(), 3.0);
+    ASSERT_DOUBLE_EQ(test_struct2.struct1().theta(), 4.0);
+
+    auto test_struct_ret = plugin_client->funcWithStructParam(test_struct1, test_struct2);
+
+    ASSERT_DOUBLE_EQ(test_struct_ret.x(), 5.0);
+    ASSERT_DOUBLE_EQ(test_struct_ret.y(), 7.0);
+
+    rpp::List<double> list_param;
+    list_param.resize(3);
+    list_param[0] = 1.0;
+    list_param[1] = 2.0;
+
+    rpp_schema::rpp_testing::TestStruct1::List list_struct_param;
+    list_struct_param.resize(2);
+    list_struct_param[0].x() = 1.0;
+    list_struct_param[0].y() = 2.0;
+    list_struct_param[1].x() = 3.0;
+    list_struct_param[1].y() = 4.0;
+
+    auto list_result = plugin_client->funcWithListParam(list_param, list_struct_param);
+
+    ASSERT_EQ(list_result.size(), 5);
+    ASSERT_DOUBLE_EQ(list_result[0], 1.0);
+    ASSERT_DOUBLE_EQ(list_result[1], 2.0);
+    ASSERT_DOUBLE_EQ(list_result[2], 0.0);
+    ASSERT_DOUBLE_EQ(list_result[3], 3.0);
+    ASSERT_DOUBLE_EQ(list_result[4], 7.0);
+
+
+    auto list_struct_result = plugin_client->funcWithListOfStructParam(list_struct_param);
+
+    ASSERT_EQ(list_struct_result.size(), 2);
+    ASSERT_DOUBLE_EQ(list_struct_result[0].linear(), 3.0);
+    ASSERT_DOUBLE_EQ(list_struct_result[0].angular(), 0.0);
+    ASSERT_DOUBLE_EQ(list_struct_result[1].linear(), 7.0);
+    ASSERT_DOUBLE_EQ(list_struct_result[1].angular(), 0.0);
+
+
+    auto [double_val, bool_val] = plugin_client->funcWithMultipleSimpleReturns();
+
+    ASSERT_DOUBLE_EQ(double_val, 3.14);
+    ASSERT_TRUE(bool_val);
+
+    auto [struct1_val, struct2_val] = plugin_client->funcWithMultipleStructReturns();
+
+    ASSERT_DOUBLE_EQ(struct1_val.x(), 1.0);
+    ASSERT_DOUBLE_EQ(struct1_val.y(), 2.0);
+    ASSERT_DOUBLE_EQ(struct2_val.linear(), 4.0);
+    ASSERT_DOUBLE_EQ(struct2_val.angular(), 5.0);
+    ASSERT_DOUBLE_EQ(struct2_val.struct1().x(), 2.0);
+    ASSERT_DOUBLE_EQ(struct2_val.struct1().y(), 3.0);
+
+    auto [list_double_val, list_struct_val] = plugin_client->funcWithMultipleListReturns();
+
+    ASSERT_EQ(list_double_val.size(), 3);
+    ASSERT_EQ(list_struct_val.size(), 2);
+
+    ASSERT_DOUBLE_EQ(list_double_val[0], 1.0);
+    ASSERT_DOUBLE_EQ(list_double_val[1], 2.0);
+    ASSERT_DOUBLE_EQ(list_double_val[2], 3.0);
+
+    ASSERT_DOUBLE_EQ(list_struct_val[0].x(), 4.0);
+    ASSERT_DOUBLE_EQ(list_struct_val[0].y(), 5.0);
+    ASSERT_DOUBLE_EQ(list_struct_val[1].x(), 7.0);
+    ASSERT_DOUBLE_EQ(list_struct_val[1].y(), 8.0);
+
+}
 
 
 
@@ -151,6 +246,18 @@ TEST_F(TestSuite, TestSimpleInstancePlugin) {
     ASSERT_TRUE(plugin->validate(odom_msg));
 }
 
+TEST_F(TestSuite, TestAllInterfaceTypesInstancePlugin) {
+    std::string plugin_name = "test_lib::AllInterfaceTypesCpp";
+
+    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+
+    auto plugin =
+        rpp::load_cpp_plugin_from_shared_library
+            <rpp_testing::TestInterfaceAll>(plugin_info);
+
+    return check_all_interface_types_plugin_call(plugin.get());
+}
+
 
 
 TEST_F(TestSuite, TestPluginAdapterLocal)
@@ -228,6 +335,62 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
 }
 
 
+TEST_F(TestSuite, TestPluginAdapterLocalWithAllInterfaceTypes)
+{
+    std::string host = "127.0.0.1";
+    uint16_t port = get_available_port();
+    std::string plugin_name = "test_lib::AllInterfaceTypesCpp";
+    std::atomic<bool> server_ready(false);
+    std::atomic<bool> shutdown(false);
+
+    std::thread server_thread([&]() {
+        // Kreiramo stvarni plugin i omotamo ga u server adapter
+        rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+        ASSERT_TRUE(plugin_info.plugin_name == plugin_name);
+
+        auto instance =
+            rpp::load_cpp_plugin_from_shared_library
+                <rpp_testing::TestInterfaceAll>(plugin_info);
+
+        auto server_adapter =
+            rpp::load_plugin_adapter_server<rpp_testing::TestInterfaceAll>(
+                std::move(instance));
+        try{
+            thread_run(server_adapter.get(), &server_ready, &shutdown, host, port);
+        }
+        catch (const std::exception& e) {
+            FAIL() << "Exception in server thread: " << e.what();
+        }
+        catch (...) {
+            FAIL() << "Unknown exception in server thread.";
+        }
+    });
+
+    int max_wait_time_ms = 1000; // Maksimalno vrijeme čekanja u milisekundama
+    while (!server_ready) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        max_wait_time_ms -= 10;
+        if (max_wait_time_ms <= 0) {
+            FAIL() << "Server not ready after waiting for 1 second.";
+        }
+    }
+
+    rpp::ClientContext context(host, port);
+    auto plugin_client = \
+        rpp::load_plugin_adapter_client<rpp_testing::TestInterfaceAll>();
+
+    ASSERT_TRUE(plugin_client != nullptr);
+
+    plugin_client->connect_adapter_client__(context);
+
+    check_all_interface_types_plugin_call(plugin_client.get());
+
+
+    shutdown.store(true);
+    server_thread.join();
+}
+
+
 TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimpleCpp";
@@ -294,10 +457,9 @@ TEST_F(TestSuite, TestPluginAdapterWithPythonPlugin) {
     std::string command = "rpp_component_server_python"
         " --host " + host +
         " --port " + std::to_string(port) +
-        " --plugin " + plugin_name +
         " --home " + TestSuite::rpp_home_dir +
+        " --plugin " + plugin_name +
         " --path " + TestSuite::rpp_home_dir + "/components" +
-        " --name " + "test_name" +
         " --conn " +  "test_connection";
 
 

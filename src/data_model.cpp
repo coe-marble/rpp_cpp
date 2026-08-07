@@ -17,7 +17,6 @@ PluginInfo PluginInfo::from_json(const nlohmann::json& j) {
     info.library = get_safe_string_from_json(j, "Library", "");
     info.plugin_type_name = get_safe_string_from_json(j, "PluginType", "");
     info.class_name = get_safe_string_from_json(j, "ClassName", "");
-    info.plugin_path = get_safe_string_from_json(j, "PluginPath", "");
     info.source_file = get_safe_string_from_json(j, "SourceFile", "");
     info.plugin_shared_library_path = get_safe_string_from_json(j, "PluginSharedLibraryPath", "");
     info.plugin_type_shared_library_path = get_safe_string_from_json(j, "PluginTypeSharedLibraryPath", "");

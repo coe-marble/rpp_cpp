@@ -54,7 +54,6 @@ class PluginInfo final {
         std::string library;
         std::string plugin_type_name;
         std::string class_name;
-        std::string plugin_path;
         std::string source_file;
         std::string plugin_shared_library_path;
         std::string plugin_type_shared_library_path;

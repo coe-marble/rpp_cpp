@@ -12,6 +12,7 @@
 #include "rpp_cpp/parameter_handler.hpp"
 
 #include "rpp_plugin_types/rpp_testing/MotionController2D.hpp"
+#include "rpp_plugin_types/rpp_testing/DisturbanceGenerator2D.hpp"
 #include "rpp_plugin_types/rpp_testing/TestInterfaceAll.hpp"
 #include <capnp/message.h>
 #include <capnp/serialize-packed.h>
@@ -165,6 +166,37 @@ void check_all_interface_types_plugin_call(
     ASSERT_DOUBLE_EQ(list_struct_val[1].x(), 7.0);
     ASSERT_DOUBLE_EQ(list_struct_val[1].y(), 8.0);
 
+}
+
+TEST_F(TestSuite, TestDataInterface) {
+    std::string plugin_name = "test_lib::DataInterfaceCpp";
+
+    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+
+    auto plugin =
+        rpp::load_cpp_plugin_from_shared_library
+            <rpp_testing::DisturbanceGenerator2D>(plugin_info);
+
+    ASSERT_TRUE(plugin != nullptr);
+
+    auto data = plugin->getData();
+
+    ASSERT_EQ(data.size(), 5);
+    ASSERT_EQ(data[0], 1);
+    ASSERT_EQ(data[1], 2);
+    ASSERT_EQ(data[2], 3);
+    ASSERT_EQ(data[3], 4);
+    ASSERT_EQ(data[4], 5);
+
+    bool set_result = plugin->setData(data);
+
+    ASSERT_TRUE(set_result);
+
+    // Test with incorrect data
+    rpp::Data incorrect_data;
+    incorrect_data.resize(4); // Incorrect size
+    set_result = plugin->setData(incorrect_data);
+    ASSERT_FALSE(set_result);
 }
 
 
@@ -577,7 +609,7 @@ RPP_PARAM_STRUCT(TestStruct2,
 
 TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilder)
 {
-    std::string component_folder = TestSuite::test_data_dir + "/test_component";
+    std::string component_folder = TestSuite::test_data_dir + "/test_component_cpp";
 
     auto context = rpp::ComponentContextBuilder(
         *TestSuite::data_manager)

@@ -34,17 +34,19 @@ namespace rpp {
             return build_for_component(component_path);
         }
 
-        ComponentContext build_from_script(
-            const std::string& script_path,
+        ComponentContext build_from_script_description(
+            const std::string& script_description_path,
             const std::string& parts_folder="")
         {
-            auto script_description = data_manager_.load_script_description(script_path);
+            auto script_description = data_manager_.load_script_description(script_description_path);
             if (script_description.components.empty()) {
                 throw std::runtime_error("Script description does not contain any components.");
             }
             std::map<std::string, ComponentContext> subcomponents;
             if (parts_folder.empty()) {
-                parts_folder_ = data_manager_.get_default_script_parts_folder_path(script_path);
+                parts_folder_ = data_manager_
+                    .get_default_script_parts_folder_path_from_description(
+                        script_description_path);
             }
             else {
                 parts_folder_ = parts_folder;

@@ -235,4 +235,65 @@ namespace rpp {
         operator capnp::List<capnp::Text>::Reader() const { return list_builder_.asReader(); }
         operator ListConst<std::string>() const { return ListConst<std::string>(list_builder_.asReader()); }
     };
+
+    class DataConst {
+    private:
+        const uint8_t* ptr_ = nullptr;
+        size_t size_ = 0;
+        std::shared_ptr<void> message_lifetime_;
+
+    public:
+        DataConst(capnp::Data::Reader reader, std::shared_ptr<void> lifetime = nullptr)
+            : ptr_(reader.begin()), size_(reader.size()), message_lifetime_(lifetime) {}
+
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+
+        uint8_t operator[](size_t index) const { return ptr_[index]; }
+
+        const uint8_t* begin() const { return ptr_; }
+        const uint8_t* end() const { return ptr_ + size_; }
+
+        operator capnp::Data::Reader() const { return capnp::Data::Reader(ptr_, size_); }
+    };
+
+    class Data {
+    private:
+        capnp::Data::Builder builder_;
+
+        using ResizeCallback = std::function<capnp::Data::Builder(size_t)>;
+        using AllocatorVariant = std::variant<ResizeCallback, std::shared_ptr<capnp::MallocMessageBuilder>>;
+        AllocatorVariant allocator_;
+    public:
+        Data()
+            : builder_(), allocator_(std::make_shared<capnp::MallocMessageBuilder>()) {}
+
+        Data(capnp::Data::Builder builder, std::function<capnp::Data::Builder(size_t)> cb = nullptr)
+            : builder_(builder), allocator_(cb) {}
+
+        size_t size() const { return builder_.size(); }
+        bool empty() const { return size() == 0; }
+
+        uint8_t& operator[](size_t index) { return builder_[index]; }
+        uint8_t operator[](size_t index) const { return builder_[index]; }
+
+        // NOVO: Metoda za alokaciju memorije unutar poruke preko callbacka
+        void resize(size_t new_size) { init(new_size); }
+
+        operator capnp::Data::Builder() { return builder_; }
+        operator capnp::Data::Reader() const { return builder_.asReader(); }
+        operator DataConst() const { return DataConst(builder_.asReader()); }
+    private:
+        void init(size_t new_size) {
+            if (std::holds_alternative<ResizeCallback>(allocator_)) {
+                builder_ = std::get<ResizeCallback>(allocator_)(new_size);
+            }
+            else if (std::holds_alternative<std::shared_ptr<capnp::MallocMessageBuilder>>(allocator_)) {
+                if (auto& mb = std::get<std::shared_ptr<capnp::MallocMessageBuilder>>(allocator_)) {
+                    builder_ = mb->initRoot<capnp::Data>(new_size);
+                }
+            }
+        }
+    };
+
 }

@@ -109,6 +109,7 @@ class ScriptDescription {
         std::string script_path;
         std::string language;
         std::map<std::string, std::vector<ScriptComponent>> components;
+        std::map<std::string, std::string> spec;
 
     static ScriptDescription from_json(
         const nlohmann::json& j, const std::string& script_path);

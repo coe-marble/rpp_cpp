@@ -138,11 +138,12 @@ public:
         return parent_component_path + "/subcomponents/" + subcomponent_id;
     }
 
-    std::string get_default_script_parts_folder_path(const std::string& script_path)
+    std::string get_default_script_parts_folder_path_from_description(
+        const std::string& script_description_path)
     {
         // Go up two levels to reach the script's root folder
         std::filesystem::path script_dir =
-            std::filesystem::path(script_path).parent_path().parent_path();
+            std::filesystem::path(script_description_path).parent_path().parent_path();
         std::filesystem::path parts_dir = script_dir / "parts";
         return parts_dir.string();
     }

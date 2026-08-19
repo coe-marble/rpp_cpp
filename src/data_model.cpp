@@ -171,6 +171,11 @@ ScriptDescription ScriptDescription::from_json(
             }
         }
     }
+    if (j.contains("Spec") && j["Spec"].is_object()) {
+        for (auto& [key, value] : j["Spec"].items()) {
+            description.spec[key] = value.get<std::string>();
+        }
+    }
     return description;
 }
 

@@ -257,7 +257,7 @@ TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
 
 TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
     auto parameter_handler = std::make_unique<rpp::params::ParameterHandler>(
-        test_data_dir + "/test_component");
+        test_data_dir + "/test_component_cpp");
 
     auto loaded_params = parameter_handler->load_parameters_from_python_module();
 
@@ -335,7 +335,7 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
 TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
 
     auto parameter_handler = std::make_unique<rpp::params::ParameterHandler>(
-        test_data_dir + "/test_component");
+        test_data_dir + "/test_component_cpp");
 
     ParametersDescription parameters
     {

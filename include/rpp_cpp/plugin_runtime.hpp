@@ -2,9 +2,13 @@
 #include <vector>
 #include <kj/async-io.h>
 #include <functional>
+#include <map>
+#include <memory>
+#include <utility>
 #include <capnp/ez-rpc.h>
 #include "plugin_runtime.capnp.h"
 #include "adapter_bases.hpp"
+#include "logger.hpp"
 
 namespace rpp {
 
@@ -15,9 +19,13 @@ class PluginRuntimeServer final : public runtime::PluginRuntime::Server
     using ServerAdapterMap = std::map<std::string, ServerAdapterPtr>;
     std::shared_ptr<ServerAdapterMap> adapters_;
     std::function<void()> on_shutdown_callback_;
+    std::shared_ptr<RppLogger> logger_;
 
 public:
-    PluginRuntimeServer() = default;
+    explicit PluginRuntimeServer(std::shared_ptr<RppLogger> logger = nullptr)
+        : logger_(logger ? std::move(logger)
+                         : std::make_shared<RppLogger>("rpp_plugin_runtime_server"))
+    {}
 
     void set_adapters(const ServerAdapterMap& adapters) {
         adapters_ = std::make_shared<ServerAdapterMap>(adapters);
@@ -29,12 +37,12 @@ public:
 
 
     ::kj::Promise<void> ping(PingContext /* context*/ ) override {
-        // Implement the ping method logic here
+        RPP_LOG_DEBUG(*logger_, "Runtime server received ping.");
         return ::kj::READY_NOW;
     }
 
     ::kj::Promise<void> shutdown(ShutdownContext /* context */ ) override {
-        // Implement the shutdown method logic here
+        RPP_LOG_DEBUG(*logger_, "Runtime server received shutdown request.");
         if (on_shutdown_callback_) {
             on_shutdown_callback_();
         }
@@ -42,7 +50,7 @@ public:
     }
 
     ::kj::Promise<void> listAdapters(ListAdaptersContext context) override {
-        // Implement the listAdapters method logic here
+        RPP_LOG_DEBUG(*logger_, "Runtime server received listAdapters.");
         auto adapter_infos = context.getResults().initAdapters(adapters_->size());
         int index = 0;
         for (auto& [name, adapter] : *adapters_) {
@@ -59,6 +67,9 @@ public:
 
     ::kj::Promise<void> getComponentCapability(GetComponentCapabilityContext context) override {
         std::string connection_name = context.getParams().getName();
+        RPP_LOG_DEBUG(*logger_,
+                      "Runtime server received getComponentCapability connection=%s.",
+                      connection_name.c_str());
         if (adapters_->find(connection_name) != adapters_->end()) {
             auto adapter = (*adapters_)[connection_name];
             auto capability = adapter->create_capability_adapter_server__();
@@ -76,24 +87,32 @@ class PluginRuntimeClient final
 private:
     const kj::AsyncIoContext& io_context_;
     runtime::PluginRuntime::Client backend_;
+    std::shared_ptr<RppLogger> logger_;
 
 public:
 
-    PluginRuntimeClient(const ClientContext& context)
+    PluginRuntimeClient(const RppRuntimeClientContext& context,
+                        std::shared_ptr<RppLogger> logger = nullptr)
         : io_context_(context.get_io_context()),
-          backend_(context.get_client().castAs<rpp::runtime::PluginRuntime>())
+          backend_(context.get_client().castAs<rpp::runtime::PluginRuntime>()),
+          logger_(logger ? std::move(logger)
+                         : std::make_shared<RppLogger>("rpp_plugin_runtime_client"))
     {
+        RPP_LOG_DEBUG(*logger_, "Runtime client connected.");
     }
 
     void ping () {
+        RPP_LOG_DEBUG(*logger_, "Runtime client calling ping.");
         backend_.pingRequest().send().wait(io_context_.waitScope);
     }
 
     void shutdown () {
+        RPP_LOG_DEBUG(*logger_, "Runtime client calling shutdown.");
         backend_.shutdownRequest().send().wait(io_context_.waitScope);
     }
 
     std::vector<rpp::ServerAdapterInfo> listAdapters () {
+        RPP_LOG_DEBUG(*logger_, "Runtime client calling listAdapters.");
         auto request = backend_.listAdaptersRequest();
         auto response = request.send().wait(io_context_.waitScope);
         auto adapters = response.getAdapters();

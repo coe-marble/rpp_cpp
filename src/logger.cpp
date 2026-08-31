@@ -51,7 +51,8 @@ RppLogger::RppLogger(const LoggerOptions& options)
 
     // Explicit constructor to hook into a specific ROS 2 Node/Component logger name
 RppLogger::RppLogger(const std::string& name)
-    : options_({LogLevel::INFO, name})
+    : options_({LogLevel::INFO, name}),
+      pimpl_(std::make_unique<Impl>())
 {
     #if defined(USE_ROS2_COMPILATION)
         pimpl_->ros_logger = std::make_shared<rclcpp::Logger>(rclcpp::get_logger(name));
@@ -105,7 +106,8 @@ void RppLogger::log(LogLevel level, const char* file, int line, std::string_view
             case LogLevel::ERROR: lvl_str = "[ERROR]"; out = &std::cerr; break;
         }
         // Ispis u formatu: [RAZINA] [datoteka:linija] poruka
-        *out << lvl_str << " [" << file << ":" << line << "] " << msg << "\n";
+        *out << lvl_str << " [" << pimpl_->logger_name << "] ["
+             << file << ":" << line << "] " << msg << "\n";
     #endif
 }
 

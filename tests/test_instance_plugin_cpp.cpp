@@ -9,6 +9,8 @@
 #include "rpp_cpp/rpp_server_host.hpp"
 #include "rpp_cpp/context.hpp"
 #include "rpp_cpp/context_builder.hpp"
+#include "rpp_cpp/child_process.hpp"
+#include "rpp_cpp/component_call_executor.hpp"
 #include "rpp_cpp/parameter_handler.hpp"
 
 #include "rpp_plugin_types/rpp_testing/MotionController2D.hpp"
@@ -17,11 +19,95 @@
 #include <capnp/message.h>
 #include <capnp/serialize-packed.h>
 #include <capnp/ez-rpc.h>
+#include <nlohmann/json.hpp>
 #include <thread>
 #include <atomic>
 
 
-class TestSuite : public ::testing::Test {
+TEST(DataModelTest, ComponentRecordParsesMultipleSubcomponentsInOneSlot)
+{
+    const auto description = nlohmann::json::parse(R"({
+        "Id": "parent-id",
+        "Subcomponents": {
+            "controllers": [
+                {
+                    "Id": "first-id",
+                    "PluginName": "test::First"
+                },
+                {
+                    "Id": "second-id",
+                    "PluginName": "test::Second"
+                }
+            ]
+        }
+    })");
+
+    const auto record =
+        rpp::ComponentRecord::from_json(description, "/parts/parent-id");
+
+    const auto& controllers = record.subcomponents.at("controllers");
+    ASSERT_EQ(controllers.size(), 2U);
+    EXPECT_EQ(controllers[0].id, "first-id");
+    EXPECT_EQ(controllers[1].id, "second-id");
+}
+
+TEST(DataModelTest, ScriptDescriptionParsesConfigurations)
+{
+    const auto description_json = nlohmann::json::parse(R"({
+        "Configurations": {
+            "Default": {
+                "Components": {
+                    "controllers": [{
+                        "Id": "controller-id",
+                        "PluginName": "test::Controller"
+                    }]
+                }
+            }
+        },
+        "ActiveConfiguration": "Default"
+    })");
+
+    const auto description = rpp::ScriptDescription::from_json(
+        description_json, "/workspace/.rppws/script_descriptions/example.json");
+
+    EXPECT_EQ(description.active_configuration, "Default");
+    const auto& controllers = description.configurations.at("Default").at(
+        "controllers");
+    ASSERT_EQ(controllers.size(), 1U);
+    EXPECT_EQ(controllers.front().id, "controller-id");
+    EXPECT_EQ(controllers.front().plugin_name, "test::Controller");
+}
+
+TEST(ComponentCallExecutorTest, RunsCallsAndPropagatesErrors)
+{
+    rpp::ComponentCallExecutor executor;
+    executor.start();
+
+    const auto caller_thread = std::this_thread::get_id();
+    EXPECT_NE(executor.call([](kj::AsyncIoContext&) {
+        return std::this_thread::get_id();
+    }), caller_thread);
+
+    bool void_call_completed = false;
+    executor.call([&void_call_completed](kj::AsyncIoContext&) {
+        void_call_completed = true;
+    });
+    EXPECT_TRUE(void_call_completed);
+
+    EXPECT_THROW(executor.call([](kj::AsyncIoContext&) -> int {
+        throw std::logic_error("expected failure");
+    }), std::logic_error);
+
+    EXPECT_THROW(executor.call([&executor](kj::AsyncIoContext&) {
+        executor.call([](kj::AsyncIoContext&) {});
+    }), std::runtime_error);
+
+    executor.stop();
+    EXPECT_THROW(executor.call([](kj::AsyncIoContext&) {}), std::runtime_error);
+}
+
+
+class NativePluginTest : public ::testing::Test {
 
 public:
     static std::string test_lib;
@@ -68,11 +154,29 @@ protected:
     }
 };
 
-std::unique_ptr<rpp::RppDataManager> TestSuite::data_manager = nullptr;
-std::string TestSuite::test_lib = "";
-std::string TestSuite::test_data_dir = "";
-std::string TestSuite::rpp_home_dir = "";
-bool TestSuite::initialization_successful = false;
+std::unique_ptr<rpp::RppDataManager> NativePluginTest::data_manager = nullptr;
+std::string NativePluginTest::test_lib = "";
+std::string NativePluginTest::test_data_dir = "";
+std::string NativePluginTest::rpp_home_dir = "";
+bool NativePluginTest::initialization_successful = false;
+
+namespace rpp {
+
+class ComponentContextAccess final {
+public:
+    static ComponentContext with_logger_and_parameters(
+            std::shared_ptr<RppLogger> logger,
+            std::map<std::string, params::ParameterValue> parameters)
+    {
+        ComponentContext context(std::move(logger));
+        context.parameters_ = params::Parameters(std::move(parameters));
+        return context;
+    }
+};
+
+}  // namespace rpp
+
+class PythonAdapterTest : public NativePluginTest {};
 
 
 void check_all_interface_types_plugin_call(
@@ -168,10 +272,10 @@ void check_all_interface_types_plugin_call(
 
 }
 
-TEST_F(TestSuite, TestDataInterface) {
+TEST_F(NativePluginTest, TestDataInterface) {
     std::string plugin_name = "test_lib::DataInterfaceCpp";
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
     auto plugin =
         rpp::load_cpp_plugin_from_shared_library
@@ -201,7 +305,7 @@ TEST_F(TestSuite, TestDataInterface) {
 
 
 
-TEST_F(TestSuite, TestMsgAsStruct) {
+TEST_F(NativePluginTest, TestMsgAsStruct) {
     // Create PluginInfo for the C++ plugin
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
@@ -221,11 +325,11 @@ TEST_F(TestSuite, TestMsgAsStruct) {
 }
 
 
-TEST_F(TestSuite, TestInstanceByGenericInterface) {
+TEST_F(NativePluginTest, TestInstanceByGenericInterface) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimpleCpp";
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
     auto instance = rpp::load_cpp_plugin_from_shared_library<rpp::Plugin>(plugin_info);
     ASSERT_TRUE(instance != nullptr);
@@ -236,18 +340,24 @@ TEST_F(TestSuite, TestInstanceByGenericInterface) {
 
 }
 
-TEST_F(TestSuite, TestSimpleInstancePlugin) {
+TEST_F(NativePluginTest, TestSimpleInstancePlugin) {
     // Create PluginInfo for the C++ plugin
 
-    // assert initialization in TestSuite::SetUpTestSuite() was successful
+    // assert initialization in NativePluginTest::SetUpTestSuite() was successful
 
     std::string plugin_name = "test_lib::ComponentPluginSimpleCpp";
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
     auto plugin =
         rpp::load_cpp_plugin_from_shared_library
             <rpp_testing::MotionController2D>(plugin_info);
+
+    auto logger = std::make_shared<rpp::RppLogger>(
+        rpp::LoggerOptions{rpp::LogLevel::DEBUG, "test_simple_instance_plugin"});
+    auto context = rpp::ComponentContextAccess::with_logger_and_parameters(
+        logger, {{"validate_threshold", 5.0}});
+    plugin->initialize(context);
 
     auto parameter_desc = rpp::load_cpp_plugin_parameters_description(plugin_info);
 
@@ -278,10 +388,10 @@ TEST_F(TestSuite, TestSimpleInstancePlugin) {
     ASSERT_TRUE(plugin->validate(odom_msg));
 }
 
-TEST_F(TestSuite, TestAllInterfaceTypesInstancePlugin) {
+TEST_F(NativePluginTest, TestAllInterfaceTypesInstancePlugin) {
     std::string plugin_name = "test_lib::AllInterfaceTypesCpp";
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
     auto plugin =
         rpp::load_cpp_plugin_from_shared_library
@@ -292,7 +402,7 @@ TEST_F(TestSuite, TestAllInterfaceTypesInstancePlugin) {
 
 
 
-TEST_F(TestSuite, TestPluginAdapterLocal)
+TEST_F(NativePluginTest, TestPluginAdapterLocal)
 {
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
@@ -302,7 +412,7 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
 
     std::thread server_thread([&]() {
         // Kreiramo stvarni plugin i omotamo ga u server adapter
-        rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+        rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
         ASSERT_TRUE(plugin_info.plugin_name == plugin_name);
 
         auto instance =
@@ -338,13 +448,21 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
         }
     }
 
-    rpp::ClientContext context(host, port);
     auto plugin_client = \
         rpp::load_plugin_adapter_client<rpp_testing::MotionController2D>();
 
     ASSERT_TRUE(plugin_client != nullptr);
 
-    plugin_client->connect_adapter_client__(context);
+    rpp::ComponentCallExecutor client_executor;
+    client_executor.start();
+    auto context = client_executor.call([&](kj::AsyncIoContext& io) {
+        return std::make_unique<rpp::RppRuntimeClientContext>(
+            host, port, std::chrono::seconds(5), &io);
+    });
+    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext&) {
+        return plugin_client->connect_adapter_client__(
+            *context, std::ref(client_executor));
+    }));
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
     odom_msg.pose().position().x() = 1.0;
@@ -361,13 +479,17 @@ TEST_F(TestSuite, TestPluginAdapterLocal)
 
     ASSERT_TRUE(is_valid);
 
+    client_executor.call([&](kj::AsyncIoContext&) {
+        plugin_client.reset();
+        context.reset();
+    });
+    client_executor.stop();
     shutdown.store(true);
     server_thread.join();
-
 }
 
 
-TEST_F(TestSuite, TestPluginAdapterLocalWithAllInterfaceTypes)
+TEST_F(NativePluginTest, TestPluginAdapterLocalWithAllInterfaceTypes)
 {
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
@@ -377,7 +499,7 @@ TEST_F(TestSuite, TestPluginAdapterLocalWithAllInterfaceTypes)
 
     std::thread server_thread([&]() {
         // Kreiramo stvarni plugin i omotamo ga u server adapter
-        rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+        rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
         ASSERT_TRUE(plugin_info.plugin_name == plugin_name);
 
         auto instance =
@@ -407,29 +529,41 @@ TEST_F(TestSuite, TestPluginAdapterLocalWithAllInterfaceTypes)
         }
     }
 
-    rpp::ClientContext context(host, port);
     auto plugin_client = \
         rpp::load_plugin_adapter_client<rpp_testing::TestInterfaceAll>();
 
     ASSERT_TRUE(plugin_client != nullptr);
 
-    plugin_client->connect_adapter_client__(context);
+    rpp::ComponentCallExecutor client_executor;
+    client_executor.start();
+    auto context = client_executor.call([&](kj::AsyncIoContext& io) {
+        return std::make_unique<rpp::RppRuntimeClientContext>(
+            host, port, std::chrono::seconds(5), &io);
+    });
+    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext&) {
+        return plugin_client->connect_adapter_client__(
+            *context, std::ref(client_executor));
+    }));
 
     check_all_interface_types_plugin_call(plugin_client.get());
 
-
+    client_executor.call([&](kj::AsyncIoContext&) {
+        plugin_client.reset();
+        context.reset();
+    });
+    client_executor.stop();
     shutdown.store(true);
     server_thread.join();
 }
 
 
-TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
+TEST_F(NativePluginTest, TestPluginAdapterLocalWithStringPluginName) {
 
     std::string plugin_name = "test_lib::ComponentPluginSimpleCpp";
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
     std::atomic<bool> server_ready(false);
     std::atomic<bool> shutdown(false);
@@ -449,12 +583,22 @@ TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
             FAIL() << "Server not ready after waiting for 5 seconds.";
         }
     }
-    rpp::ClientContext context(host, port);
     auto plugin_client_raw = \
     rpp::load_plugin_adapter_client(plugin_info);
     ASSERT_TRUE(plugin_client_raw != nullptr);
-    plugin_client_raw->connect_adapter_client__(context);
     auto plugin_client = dynamic_cast<rpp_testing::MotionController2D*>(plugin_client_raw.get());
+    ASSERT_TRUE(plugin_client != nullptr);
+
+    rpp::ComponentCallExecutor client_executor;
+    client_executor.start();
+    auto context = client_executor.call([&](kj::AsyncIoContext& io) {
+        return std::make_unique<rpp::RppRuntimeClientContext>(
+            host, port, std::chrono::seconds(5), &io);
+    });
+    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext&) {
+        return plugin_client_raw->connect_adapter_client__(
+            *context, std::ref(client_executor));
+    }));
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
     odom_msg.pose().position().x() = 1.0;
@@ -470,48 +614,54 @@ TEST_F(TestSuite, TestPluginAdapterLocalWithStringPluginName) {
     is_valid = plugin_client->validate(odom_msg);
     ASSERT_TRUE(is_valid);
 
+    client_executor.call([&](kj::AsyncIoContext&) {
+        plugin_client_raw.reset();
+        context.reset();
+    });
+    client_executor.stop();
     shutdown.store(true);
     server_thread.join();
 }
 
-TEST_F(TestSuite, TestPluginAdapterWithPythonPlugin) {
+TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
 
-    std::atomic<bool> server_ready(false);
     std::string plugin_name = "test_lib::ComponentPluginSimplePy";
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
 
-    rpp::PluginInfo plugin_info = TestSuite::data_manager->get_plugin_info_from_lib(plugin_name);
+    rpp::PluginInfo plugin_info = NativePluginTest::data_manager->get_plugin_info_from_lib(plugin_name);
 
+    std::vector<std::string> command{
+        "rpp_component_server_python", "--host", host,
+        "--port", std::to_string(port), "--home", NativePluginTest::rpp_home_dir,
+        "--plugin", plugin_name, "--path",
+        NativePluginTest::test_data_dir + "/test_component_simple_py",
+        "--conn", "test_connection",
+    };
 
-
-
-    std::string command = "rpp_component_server_python"
-        " --host " + host +
-        " --port " + std::to_string(port) +
-        " --home " + TestSuite::rpp_home_dir +
-        " --plugin " + plugin_name +
-        " --path " + TestSuite::rpp_home_dir + "/components" +
-        " --conn " +  "test_connection";
-
-
-    std::thread server_thread([command]() {
-        std::system(command.c_str());
-    });
+    rpp::ChildProcess process(command);
+    process.start();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-    rpp::ClientContext context(host, port);
-
     auto plugin_client_raw = \
         rpp::load_plugin_adapter_client(plugin_info, "test_name", "test_connection");
-
-    plugin_client_raw->connect_adapter_client__(context);
-
     auto plugin_client = dynamic_cast<rpp_testing::MotionController2D*>(plugin_client_raw.get());
-    auto runtime_client = std::make_unique<rpp::PluginRuntimeClient>(context);
     ASSERT_TRUE(plugin_client != nullptr);
-    ASSERT_TRUE(runtime_client != nullptr);
+
+    rpp::ComponentCallExecutor client_executor;
+    client_executor.start();
+    auto context = client_executor.call([&](kj::AsyncIoContext& io) {
+        return std::make_unique<rpp::RppRuntimeClientContext>(
+            host, port, std::chrono::seconds(5), &io);
+    });
+    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext&) {
+        return plugin_client_raw->connect_adapter_client__(
+            *context, std::ref(client_executor));
+    }));
+    auto runtime_client = client_executor.call([&](kj::AsyncIoContext&) {
+        return std::make_unique<rpp::PluginRuntimeClient>(*context);
+    });
 
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
@@ -527,13 +677,28 @@ TEST_F(TestSuite, TestPluginAdapterWithPythonPlugin) {
 
     is_valid = plugin_client->validate(odom_msg);
 
-    runtime_client->shutdown();
-    server_thread.join();
+    client_executor.call([&](kj::AsyncIoContext&) {
+        runtime_client->shutdown();
+    });
+    client_executor.call([&](kj::AsyncIoContext&) {
+        runtime_client.reset();
+        plugin_client_raw.reset();
+        context.reset();
+    });
+    client_executor.stop();
+    try {
+        process.wait(std::chrono::seconds(5));
+    }
+    catch (const std::exception&) {
+        process.terminate();
+        process.wait();
+        ADD_FAILURE() << "Python component server did not exit within 5 seconds.";
+    }
 
     ASSERT_TRUE(is_valid);
 }
 
-TEST_F(TestSuite, TestPluginRuntimeAdapterLocal)
+TEST_F(NativePluginTest, TestPluginRuntimeAdapterLocal)
 {
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
@@ -554,7 +719,7 @@ TEST_F(TestSuite, TestPluginRuntimeAdapterLocal)
         server_host.run();
     });
 
-    int max_wait_time_ms = 30000;
+    int max_wait_time_ms = 3000;
     while (!server_ready.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         max_wait_time_ms -= 10;
@@ -563,17 +728,31 @@ TEST_F(TestSuite, TestPluginRuntimeAdapterLocal)
         }
     }
 
-    rpp::ClientContext context(host, port);
     auto client_raw = rpp::load_plugin_adapter_client(plugin_info, "test_name", "test_connection_name");
-    client_raw->connect_adapter_client__(context);
-
-    auto runtime_client = std::make_unique<rpp::PluginRuntimeClient>(context);
-
     auto client = dynamic_cast<rpp_testing::MotionController2D*>(client_raw.get());
+    ASSERT_TRUE(client != nullptr);
 
-    runtime_client->ping();
+    rpp::ComponentCallExecutor client_executor;
+    client_executor.start();
+    auto context = client_executor.call([&](kj::AsyncIoContext& io) {
+        return std::make_unique<rpp::RppRuntimeClientContext>(
+            host, port, std::chrono::seconds(5), &io);
+    });
+    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext&) {
+        return client_raw->connect_adapter_client__(
+            *context, std::ref(client_executor));
+    }));
+    auto runtime_client = client_executor.call([&](kj::AsyncIoContext&) {
+        return std::make_unique<rpp::PluginRuntimeClient>(*context);
+    });
 
-    auto adapter_list = runtime_client->listAdapters();
+    client_executor.call([&](kj::AsyncIoContext&) {
+        runtime_client->ping();
+    });
+
+    auto adapter_list = client_executor.call([&](kj::AsyncIoContext&) {
+        return runtime_client->listAdapters();
+    });
 
     ASSERT_EQ(adapter_list.size(), 1);
     ASSERT_EQ(adapter_list[0].plugin_name, "test_lib::ComponentPluginSimpleCpp");
@@ -588,7 +767,15 @@ TEST_F(TestSuite, TestPluginRuntimeAdapterLocal)
 
     ASSERT_FALSE(is_valid);
 
-    runtime_client->shutdown();
+    client_executor.call([&](kj::AsyncIoContext&) {
+        runtime_client->shutdown();
+    });
+    client_executor.call([&](kj::AsyncIoContext&) {
+        runtime_client.reset();
+        client_raw.reset();
+        context.reset();
+    });
+    client_executor.stop();
 
 
     server_thread.join();
@@ -607,13 +794,13 @@ RPP_PARAM_STRUCT(TestStruct2,
 )
 
 
-TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilder)
+TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
 {
-    std::string component_folder = TestSuite::test_data_dir + "/test_component_cpp";
+    std::string component_folder = NativePluginTest::test_data_dir + "/test_component_cpp";
 
     auto context = rpp::ComponentContextBuilder(
-        *TestSuite::data_manager)
-        .build_from_component_path(component_folder);
+        *NativePluginTest::data_manager)
+        .build_component_from_path(component_folder);
 
     auto subcomponent_list = context.list_subcomponents();
     ASSERT_EQ(subcomponent_list.size(), 1);
@@ -674,17 +861,33 @@ TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilder)
 }
 
 
-TEST_F(TestSuite, TestComplexInstancePluginUsingContextBuilderWithPythonSubc) {
+TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
 
-    std::string plugin_name = "test_lib::ComponentPluginSimplePy";
-    std::string host = "127.0.0.1";
-
-    std::string component_folder = TestSuite::test_data_dir + "/test_component_cpp_with_python_subc";
-
+    std::string component_folder = NativePluginTest::test_data_dir + "/test_component_cpp_with_python_subc";
 
     auto context = rpp::ComponentContextBuilder(
-        *TestSuite::data_manager)
-        .build_from_component_path(component_folder);
+        *NativePluginTest::data_manager)
+        .build_component_from_path(component_folder);
+
+    context.initialize();
+
+    auto python_subcomponent =
+        context.get_component<rpp_testing::MotionController2D>("ctl_1");
+    auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
+    odom_msg.pose().position().x() = 1.0;
+    odom_msg.pose().position().y() = 2.0;
+    odom_msg.pose().yaw() = 1.57;
+
+    // The Python component rejects this state.
+    ASSERT_FALSE(python_subcomponent->validate(odom_msg));
+
+    odom_msg.pose().position().x() = 6.0;
+    // Python accepts it, but its C++ child rejects it at the higher threshold.
+    ASSERT_FALSE(python_subcomponent->validate(odom_msg));
+
+    odom_msg.pose().position().x() = 11.0;
+    // Both the Python component and the C++ child now accept it.
+    ASSERT_TRUE(python_subcomponent->validate(odom_msg));
 }
 
 

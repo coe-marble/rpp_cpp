@@ -4,11 +4,16 @@
 #include <map>
 #include "parameter_description.hpp"
 
+namespace rpp {
+class ComponentContextAccess;
+}
+
 namespace rpp::params {
 
 class Parameters
 {
 friend class ParameterHandler;
+friend class ::rpp::ComponentContextAccess;
 private:
     Parameters(
         std::map<std::string, ParameterValue> values)

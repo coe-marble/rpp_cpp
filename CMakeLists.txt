@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.12)
 project(rpp_cpp)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -15,7 +15,6 @@ find_package(ament_cmake REQUIRED)
 find_package(CapnProto REQUIRED)
 find_package(pybind11 REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Development)
-find_package(pybind11 REQUIRED)
 find_package(rclcpp QUIET)
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -29,7 +28,26 @@ else()
     find_package(spdlog REQUIRED)
 endif()
 
-# header only library
+# ---------------------------------------------------------------------------
+# STEP 1: CONFIGURE/BUILD CORE C++ TARGETS
+# ---------------------------------------------------------------------------
+
+add_library(rpp_cpp_core SHARED
+  src/logger.cpp
+  src/clock.cpp
+)
+target_include_directories(rpp_cpp_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+if(rclcpp_FOUND)
+    target_compile_definitions(rpp_cpp_core PUBLIC USE_ROS2_LOGGING)
+    target_link_libraries(rpp_cpp_core PUBLIC rclcpp::rclcpp)
+else()
+    target_link_libraries(rpp_cpp_core PUBLIC spdlog::spdlog)
+endif()
+
+
 add_library(rpp_cpp SHARED
   src/plugin_runtime.capnp.c++
   src/data_model.cpp
@@ -37,11 +55,11 @@ add_library(rpp_cpp SHARED
   src/python_helpers.cpp
   src/rpp_paths.cpp
   src/plugin_loader.cpp
-  src/clock.cpp
-  src/logger.cpp
+  src/child_process.cpp
 )
 target_link_libraries(rpp_cpp
 PUBLIC
+  rpp_cpp_core
   CapnProto::capnp
   CapnProto::capnp-rpc
 PRIVATE
@@ -50,25 +68,18 @@ PRIVATE
 )
 target_link_options(rpp_cpp PUBLIC "-rdynamic")
 
+if(WIN32)
+  target_link_libraries(rpp_cpp PRIVATE ws2_32)
+endif()
+
 set_target_properties(rpp_cpp PROPERTIES
   POSITION_INDEPENDENT_CODE TRUE
 )
-
 target_include_directories(rpp_cpp
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-
-if(rclcpp_FOUND)
-    # Define compile-time macro so the header activates the ROS 2 code branch
-    target_compile_definitions(rpp_cpp INTERFACE USE_ROS2_LOGGING)
-    # Link against native ROS 2 libraries
-    target_link_libraries(rpp_cpp INTERFACE rclcpp::rclcpp)
-else()
-    # Link against standard spdlog library
-    target_link_libraries(rpp_cpp INTERFACE spdlog::spdlog)
-endif()
 
 add_executable(component_server_cpp src/component_server.cpp)
 target_include_directories(component_server_cpp PRIVATE include)
@@ -90,10 +101,7 @@ install(CODE "
   )
   ")
 
-
-
-
-install(TARGETS rpp_cpp
+install(TARGETS rpp_cpp rpp_cpp_core
   EXPORT export_rpp_cpp
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -108,6 +116,14 @@ else()
     ament_export_dependencies(CapnProto)
 endif()
 
+# Add custom target that writes RPP_CPP_CORE_PATH to a global rpp configuration file
+add_custom_target(write_rpp_cpp_core_path ALL
+  COMMAND rpp registry config RPP_CPP_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}"
+  COMMENT "Writing RPP_CPP_CORE_PATH to .rpp configuration file..."
+)
+
+add_dependencies(write_rpp_cpp_core_path rpp_cpp)
+
 
 set(OVERRIDE_RPP_TEST false)
 if(BUILD_TESTING)
@@ -118,22 +134,6 @@ if(BUILD_TESTING)
 
   set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/rpp_autogen")
   set(INCLUDE_GENERATED_DIR "${GENERATED_DIR}/.rpp/interfaces/cpp")
-  file(MAKE_DIRECTORY ${GENERATED_DIR})
-  if (OVERRIDE_RPP_TEST)
-    execute_process(
-      COMMAND rpp test setup_tmp_rpp_with_test_plugins ${GENERATED_DIR} --override
-      RESULT_VARIABLE RPP_RESULT
-    )
-  else()
-    execute_process(
-      COMMAND rpp test setup_tmp_rpp_with_test_plugins ${GENERATED_DIR}
-      RESULT_VARIABLE RPP_RESULT
-    )
-  endif()
-
-  if(NOT RPP_RESULT EQUAL 0)
-    message(FATAL_ERROR "Not able to generate test files!")
-  endif()
 
   execute_process(
       COMMAND ${Python3_EXECUTABLE} -c
@@ -143,31 +143,54 @@ if(BUILD_TESTING)
       RESULT_VARIABLE RPP_TESTING_STATUS
       ERROR_VARIABLE PY_ERROR
   )
+
   if(NOT DEFINED RPP_TESTING_STATUS OR NOT RPP_TESTING_STATUS EQUAL 0)
-      # Koristimo FATAL_ERROR odmah kako bi nam ispisao sve prikupljene informacije
       message(FATAL_ERROR
         "Could not find the rpp_testing package or there was an error while trying to import it.\n"
         "Please ensure that the rpp_testing package is installed and accessible in your Python environment.\n"
       )
   endif()
+  set(RPP_ARGS test setup_tmp_rpp_with_test_plugins ${GENERATED_DIR})
+  if(OVERRIDE_RPP_TEST)
+    list(APPEND RPP_ARGS --override)
+  endif()
+
+  add_custom_command(
+    OUTPUT "${GENERATED_DIR}/gen_checked.stamp"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
+    COMMAND rpp ${RPP_ARGS}
+    COMMAND ${CMAKE_COMMAND} -E touch "${GENERATED_DIR}/gen_checked.stamp"
+    COMMENT "Running test autogeneration linked to rpp_cpp_core..."
+    VERBATIM
+  )
+
+  add_custom_target(run_rpp_autogen
+    DEPENDS "${GENERATED_DIR}/gen_checked.stamp"
+  )
+  add_dependencies(run_rpp_autogen rpp_cpp_core rpp_cpp write_rpp_cpp_core_path)
+
+  # ---------------------------------------------------------------------------
+  # STEP 3: BUILD TEST TARGETS
+  # ---------------------------------------------------------------------------
 
 
 
   ament_add_gtest(test_instance_plugin_cpp tests/test_instance_plugin_cpp.cpp)
+  add_dependencies(test_instance_plugin_cpp run_rpp_autogen)
 
-  file(GLOB_RECURSE GENERATED_SOURCES "${INCLUDE_GENERATED_DIR}/capnp_gen/**/*.c++")
-  target_sources(test_instance_plugin_cpp PRIVATE
-    ${GENERATED_SOURCES}
-  )
+  file(GLOB_RECURSE GENERATED_SOURCES CONFIGURE_DEPENDS "${INCLUDE_GENERATED_DIR}/capnp_gen/**/*.c++")
+  if(GENERATED_SOURCES)
+    target_sources(test_instance_plugin_cpp PRIVATE
+      ${GENERATED_SOURCES}
+    )
+  endif()
 
-  add_dependencies(test_instance_plugin_cpp rpp_cpp)
   target_include_directories(test_instance_plugin_cpp PRIVATE include ${INCLUDE_GENERATED_DIR})
   target_compile_definitions(test_instance_plugin_cpp PRIVATE
     AUTOGEN_RPP_HOME="${GENERATED_DIR}/.rpp"
     TEST_DATA_DIR="${RPP_TESTING_PATH}/data"
   )
   target_link_libraries(test_instance_plugin_cpp rpp_cpp)
-
 
   ament_add_gtest(test_rpp_cpp tests/test_parameters.cpp)
 
@@ -179,7 +202,6 @@ if(BUILD_TESTING)
   target_compile_definitions(test_rpp_cpp PRIVATE
     TEST_DATA_DIR="${RPP_TESTING_PATH}/data"
   )
-
 
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

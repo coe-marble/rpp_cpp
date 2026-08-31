@@ -29,7 +29,8 @@ RppPtr<ClientAdapter> load_plugin_adapter_client(
         const PluginInfo& info,
         const std::string& name,
         const std::string& connection_name,
-        const std::string& create_symbol
+        const std::string& create_symbol,
+        std::shared_ptr<RppLogger> logger
     ) {
     ClientAdapterParams info_adapter;
     if (name.empty()) {
@@ -46,7 +47,8 @@ RppPtr<ClientAdapter> load_plugin_adapter_client(
     }
 
     auto client = load_from_shared_library__<ClientAdapter>(
-            info.plugin_type_shared_library_path, create_symbol);
+            info.plugin_type_shared_library_path, create_symbol,
+            true, false, std::move(logger));
     auto result = client->configure_adapter_client__(
             std::make_shared<ClientAdapterParams>(std::move(info_adapter)));
     if (!result) {
@@ -62,13 +64,28 @@ RppPtr<ServerAdapter> load_plugin_adapter_server(
         RppPtr<Plugin>&& plugin_ptr,
         const std::string& name,
         const std::string& connection_name,
-        const std::string& create_symbol) {
+        const std::string& create_symbol,
+        std::shared_ptr<RppLogger> logger) {
+
+    return load_plugin_adapter_server(
+        info, std::shared_ptr<Plugin>(std::move(plugin_ptr)),
+        name, connection_name, create_symbol, std::move(logger));
+}
+
+RppPtr<ServerAdapter> load_plugin_adapter_server(
+        const PluginInfo& info,
+        std::shared_ptr<Plugin> plugin_ptr,
+        const std::string& name,
+        const std::string& connection_name,
+        const std::string& create_symbol,
+        std::shared_ptr<RppLogger> logger) {
 
     auto server_ptr = load_from_shared_library__<ServerAdapter>(
-            info.plugin_type_shared_library_path, create_symbol);
+            info.plugin_type_shared_library_path, create_symbol,
+            true, false, std::move(logger));
 
     ServerAdapterParams info_adapter;
-    info_adapter.backend = std::move(plugin_ptr);
+    info_adapter.backend = plugin_ptr;
     info_adapter.plugin_name = info.plugin_name;
     if (name.empty()) {
         info_adapter.name = info.plugin_name + "_adapter_server";

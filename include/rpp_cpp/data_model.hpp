@@ -75,7 +75,7 @@ class ComponentRecord {
         std::string library;
         std::string folder;
         std::map<std::string, std::string> subcomponent_spec;
-        std::map<std::string, SubcomponentInfo> subcomponents;
+        std::map<std::string, std::vector<SubcomponentInfo>> subcomponents;
         std::optional<ParentComponentInfo> parent_component_info;
 
     static ComponentRecord from_json(
@@ -106,9 +106,13 @@ class ScriptDescription {
             std::string plugin_name;
         };
 
+        using ComponentAssignments =
+            std::map<std::string, std::vector<ScriptComponent>>;
+
         std::string script_path;
         std::string language;
-        std::map<std::string, std::vector<ScriptComponent>> components;
+        std::map<std::string, ComponentAssignments> configurations;
+        std::string active_configuration;
         std::map<std::string, std::string> spec;
 
     static ScriptDescription from_json(

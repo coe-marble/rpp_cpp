@@ -9,11 +9,10 @@ namespace rpp {
 
 
 struct ServerAdapterParams {
-    using PluginPtr = std::unique_ptr<Plugin, std::function<void(Plugin*)>>;
     std::string name;
     std::string connection_name;
     std::string plugin_name;
-    PluginPtr backend;
+    std::shared_ptr<Plugin> backend;
 };
 
 

@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -15,6 +17,7 @@ namespace rpp {
 class RppDataManager {
 
     std::string rpp_home_dir;
+    std::filesystem::path workspace_path_;
 
     using json = nlohmann::json;
 
@@ -47,7 +50,7 @@ class RppDataManager {
         return to_snake_case(plugin_name);
     }
 
-    json load_json_file(const std::string& path) {
+    json load_json_file(const std::string& path) const {
         std::ifstream file(path);
         if (!file.is_open()) {
             throw std::runtime_error("Failed to open JSON file at path: " + path);
@@ -79,7 +82,10 @@ class RppDataManager {
 public:
 
 
-    explicit RppDataManager(std::string rpp_home_dir) : rpp_home_dir(std::move(rpp_home_dir)) {}
+    explicit RppDataManager(
+        std::string rpp_home_dir, std::string workspace_path = "")
+        : rpp_home_dir(std::move(rpp_home_dir)),
+          workspace_path_(normalize_workspace_path(workspace_path)) {}
     explicit RppDataManager() : rpp_home_dir(RPP_HOME) {}
     ~RppDataManager() = default;
 
@@ -91,6 +97,86 @@ public:
         }
         auto description_json = json::parse(description_file, nullptr, false);
         return ScriptDescription::from_json(description_json, script_path);
+    }
+
+    std::string get_default_script_description_path(
+        const std::string& script_path) const
+    {
+        auto current_path = std::filesystem::path(script_path).parent_path();
+        while (!current_path.empty()) {
+            const auto workspace_path = current_path / ".rppws";
+            if (std::filesystem::is_directory(workspace_path)) {
+                return (workspace_path / "script_descriptions" /
+                    (std::filesystem::path(script_path).stem().string() +
+                     ".json")).string();
+            }
+            const auto parent_path = current_path.parent_path();
+            if (parent_path == current_path) {
+                break;
+            }
+            current_path = parent_path;
+        }
+        throw std::runtime_error(
+            "Could not find a .rppws folder above script '" + script_path + "'.");
+    }
+
+    std::string get_script_description_path_from_library(
+        const std::string& library_name, const std::string& script_name) const
+    {
+        if (workspace_path_.empty()) {
+            throw std::runtime_error(
+                "A workspace path is required to resolve a script by library and name.");
+        }
+
+        const auto separator = script_name.find("::");
+        const auto unqualified_name = separator == std::string::npos
+            ? script_name : script_name.substr(separator + 2);
+        if (separator != std::string::npos &&
+            script_name.substr(0, separator) != library_name) {
+            throw std::invalid_argument(
+                "Script '" + script_name + "' does not belong to library '" +
+                library_name + "'.");
+        }
+
+        const auto descriptions_path = workspace_path_ / "script_descriptions";
+        if (!std::filesystem::is_directory(descriptions_path)) {
+            throw std::runtime_error(
+                "Script descriptions folder not found: " +
+                descriptions_path.string());
+        }
+
+        std::vector<std::filesystem::path> descriptions;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(descriptions_path)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                descriptions.push_back(entry.path());
+            }
+        }
+        std::sort(descriptions.begin(), descriptions.end());
+
+        const auto qualified_name = library_name + "::" + unqualified_name;
+        std::vector<std::filesystem::path> matches;
+        for (const auto& description_path : descriptions) {
+            const auto description = load_json_file(description_path.string());
+            const auto stored_name = get_safe_string_from_json(
+                description, "ScriptName", "");
+            if (get_safe_string_from_json(description, "ScriptLibrary", "") ==
+                    library_name &&
+                (stored_name == unqualified_name || stored_name == qualified_name)) {
+                matches.push_back(description_path);
+            }
+        }
+
+        if (matches.empty()) {
+            throw std::runtime_error(
+                "Script '" + qualified_name + "' is not present in workspace '" +
+                workspace_path_.parent_path().string() + "'.");
+        }
+        if (matches.size() > 1) {
+            throw std::runtime_error(
+                "Multiple descriptions found for script '" + qualified_name + "'.");
+        }
+        return matches.front().string();
     }
 
     std::variant<ComponentRecord, LinkedComponentRecord>
@@ -179,6 +265,18 @@ public:
             throw std::runtime_error("Linked component folder not found at path: " + full_path);
         }
         return full_path;
+    }
+
+private:
+    static std::filesystem::path normalize_workspace_path(
+        const std::string& workspace_path)
+    {
+        if (workspace_path.empty()) {
+            return {};
+        }
+        const auto normalized_path = std::filesystem::absolute(workspace_path);
+        return normalized_path.filename() == ".rppws"
+            ? normalized_path : normalized_path / ".rppws";
     }
 };
 

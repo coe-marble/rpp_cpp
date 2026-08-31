@@ -1,12 +1,31 @@
 #include "rpp_cpp/plugin_loader.hpp"
 #include "rpp_cpp/data_manager.hpp"
+#include "rpp_cpp/context_builder.hpp"
 #include "rpp_cpp/rpp_server_host.hpp"
+#include "rpp_cpp/logger.hpp"
 #include <iostream>
 #include <thread>
 #include <atomic>
 #include <string>
+#include <csignal>
+
+namespace {
+rpp::RppServerHost* active_server_host = nullptr;
+
+void handle_interrupt(int)
+{
+    if (active_server_host != nullptr) {
+        active_server_host->shutdown();
+    }
+}
+}  // namespace
 
 int main(int argc, char **argv) {
+    rpp::LoggerOptions logger_options;
+    logger_options.level = rpp::LogLevel::DEBUG;
+    logger_options.name = "rpp_component_server_cpp";
+    auto logger = std::make_shared<rpp::RppLogger>(logger_options);
+    RPP_LOG_DEBUG(*logger, "Starting component server (argc=%d).", argc);
 
     // parse command line arguments,
     std::string home_dir = "";
@@ -73,25 +92,54 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    RPP_LOG_DEBUG(*logger, "Parsed host=%s port=%d home=%s components=%zu.",
+                 host.c_str(), port, rpp::RPP_HOME.c_str(), paths.size());
+
     rpp::RppDataManager data_manager(rpp::RPP_HOME);
-    rpp::RppServerHost server_host(host, port);
+    rpp::RppServerHost server_host(host, port, logger);
+    active_server_host = &server_host;
+    std::signal(SIGINT, handle_interrupt);
+    std::signal(SIGTERM, handle_interrupt);
+    rpp::ComponentContextBuilder context_builder(data_manager);
+
+    std::cout << "Starting component server on " << host << ":" << port << std::endl;
+
+    std::vector<rpp::ComponentContextBuilder::ComponentRoot> roots;
+    roots.reserve(paths.size());
     for (size_t i = 0; i < paths.size(); ++i) {
-        std::string path = paths[i];
-        std::string conn = conns[i];
-        std::string plugin_name = plugin_names[i];
+        const auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
+        if (!rpp::is_cpp_source_language(plugin_info)) {
+            std::cerr << "Error: component_server_cpp can only host C++ root components: "
+                      << plugin_names[i] << std::endl;
+            return 1;
+        }
+        roots.push_back({paths[i], plugin_names[i]});
+    }
 
-        rpp::PluginInfo plugin_info = data_manager.get_plugin_info_from_lib(plugin_name);
+    std::cout << "Building component contexts from roots." << std::endl;
 
+    auto contexts = context_builder.build_from_component_roots(roots);
+    RPP_LOG_DEBUG(*logger, "Contexts built.");
+    for (size_t i = 0; i < contexts.size(); ++i) {
+        const auto& conn = conns[i];
+        auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
         assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
 
-        std::cout << "Loading plugin: " << plugin_info.plugin_name << std::endl;
-        auto instance = rpp::load_cpp_plugin_from_shared_library(plugin_info);
-        std::cout << "Loading plugin: " << plugin_info.plugin_name << " done." << std::endl;
+        std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
+        auto& context = contexts[i];
+        context.initialize();
+        RPP_LOG_DEBUG(*logger, "Context initialized plugin=%s connection=%s.",
+                     plugin_names[i].c_str(), conn.c_str());
         auto server_adapter = rpp::load_plugin_adapter_server(
-            plugin_info, std::move(instance), conn + "_server", conn);
+            plugin_info, context.get_instance<rpp::Plugin>(),
+            conn + "_server", conn, "create_plugin_server", logger);
         std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
 
         server_host.add_server(std::move(server_adapter));
+        RPP_LOG_DEBUG(*logger, "Adapter registered plugin=%s connection=%s.",
+                     plugin_names[i].c_str(), conn.c_str());
     }
+    RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
     server_host.run();
+    active_server_host = nullptr;
 }

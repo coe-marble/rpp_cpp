@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 
 namespace rpp {
@@ -15,7 +16,7 @@ enum class LogLevel {
 };
 
 struct LoggerOptions {
-    LogLevel level = LogLevel::INFO;
+    LogLevel level = LogLevel::DEBUG;
     std::string name = "rpp_logger";
 };
 
@@ -80,5 +81,37 @@ private:
     rpp::LogMessageBuilder(logger_inst, rpp::LogLevel::WARN,  __FILE__, __LINE__)(msg, ##__VA_ARGS__)
 #define RPP_LOG_ERROR(logger_inst, msg, ...) \
     rpp::LogMessageBuilder(logger_inst, rpp::LogLevel::ERROR, __FILE__, __LINE__)(msg, ##__VA_ARGS__)
+
+#define RPP_LOG_INFO_ONCE(logger_inst, msg, ...) \
+    do { \
+        static std::once_flag rpp_log_once_flag; \
+        std::call_once(rpp_log_once_flag, [&]() { \
+            RPP_LOG_INFO(logger_inst, msg, ##__VA_ARGS__); \
+        }); \
+    } while (false)
+
+#define RPP_LOG_DEBUG_ONCE(logger_inst, msg, ...) \
+    do { \
+        static std::once_flag rpp_log_once_flag; \
+        std::call_once(rpp_log_once_flag, [&]() { \
+            RPP_LOG_DEBUG(logger_inst, msg, ##__VA_ARGS__); \
+        }); \
+    } while (false)
+
+#define RPP_LOG_WARN_ONCE(logger_inst, msg, ...) \
+    do { \
+        static std::once_flag rpp_log_once_flag; \
+        std::call_once(rpp_log_once_flag, [&]() { \
+            RPP_LOG_WARN(logger_inst, msg, ##__VA_ARGS__); \
+        }); \
+    } while (false)
+
+#define RPP_LOG_ERROR_ONCE(logger_inst, msg, ...) \
+    do { \
+        static std::once_flag rpp_log_once_flag; \
+        std::call_once(rpp_log_once_flag, [&]() { \
+            RPP_LOG_ERROR(logger_inst, msg, ##__VA_ARGS__); \
+        }); \
+    } while (false)
 
 } // namespace rpp

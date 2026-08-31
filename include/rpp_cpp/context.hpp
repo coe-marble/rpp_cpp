@@ -2,6 +2,8 @@
 
 #include <string>
 #include <memory>
+#include <map>
+#include <vector>
 #include "plugin_def.hpp"
 #include "parameters.hpp"
 #include <functional>
@@ -11,15 +13,20 @@
 namespace rpp {
 
     class ComponentContextBuilder;
+    class ExternalComponentProcess;
 
     class ComponentContext {
         friend class ComponentContextBuilder;
+        friend class ComponentContextAccess;
 
     private:
         using PluginPtr = std::unique_ptr<Plugin, std::function<void(Plugin*)>>;
         using PluginPtrShared = std::shared_ptr<Plugin>;
+        using SubcomponentMap =
+            std::map<std::string, std::vector<ComponentContext>>;
         params::Parameters parameters_;
-        std::map<std::string, ComponentContext> subcomponents_;
+        SubcomponentMap subcomponents_;
+        std::shared_ptr<ExternalComponentProcess> external_component_process_;
         PluginPtrShared instance_;
         std::shared_ptr<rpp::RppLogger> logger_;
         std::shared_ptr<rpp::RppClock> clock_;
@@ -27,25 +34,54 @@ namespace rpp {
         ComponentContext(
             PluginPtr&& instance,
             params::Parameters&& parameters,
-            std::map<std::string, ComponentContext>&& subcomponents,
+            SubcomponentMap&& subcomponents,
             const ClockOptions& clock_options)
                 : parameters_(std::move(parameters)),
                   subcomponents_(std::move(subcomponents)),
+                  external_component_process_(nullptr),
                   instance_(std::move(instance)),
                   logger_(std::make_shared<rpp::RppLogger>()),
                   clock_(ClockFactory::create_clock(clock_options))
             {}
 
+          ComponentContext(
+            PluginPtrShared instance,
+            params::Parameters&& parameters,
+            std::shared_ptr<ExternalComponentProcess> external_component_process,
+            SubcomponentMap&& subcomponents,
+            const ClockOptions& clock_options)
+                : parameters_(std::move(parameters)),
+                subcomponents_(std::move(subcomponents)),
+                external_component_process_(std::move(external_component_process)),
+                instance_(std::move(instance)),
+                logger_(std::make_shared<rpp::RppLogger>()),
+                clock_(ClockFactory::create_clock(clock_options))
+            {}
+
         // for script-based components that don't have an instance
         ComponentContext(
-            std::map<std::string, ComponentContext>&& subcomponents,
+            SubcomponentMap&& subcomponents,
             const ClockOptions& clock_options)
                 : parameters_(),
                 subcomponents_(std::move(subcomponents)),
+                external_component_process_(nullptr),
                 instance_(nullptr),
                 logger_(std::make_shared<rpp::RppLogger>()),
                 clock_(ClockFactory::create_clock(clock_options))
             {}
+
+        explicit ComponentContext(
+            std::shared_ptr<rpp::RppLogger> logger,
+            const ClockOptions& clock_options = ClockOptions())
+            : parameters_(),
+              subcomponents_(),
+              external_component_process_(nullptr),
+              instance_(nullptr),
+              logger_(logger ? std::move(logger)
+                             : std::make_shared<rpp::RppLogger>()),
+              clock_(ClockFactory::create_clock(clock_options))
+        {}
+
     public:
         virtual ~ComponentContext() = default;
         ComponentContext(ComponentContext&& other) noexcept = default;
@@ -66,11 +102,14 @@ namespace rpp {
 
 
         void initialize() const {
+            for (const auto& [name, subcomponents] : subcomponents_) {
+                (void)name;
+                for (const auto& subcomponent : subcomponents) {
+                    subcomponent.initialize();
+                }
+            }
             if (instance_) {
                 instance_->initialize(*this);
-            }
-            for (auto& [name, subcomponent] : subcomponents_) {
-                subcomponent.initialize();
             }
         }
 
@@ -89,7 +128,25 @@ namespace rpp {
             if (subcomponents_.find(name) == subcomponents_.end()) {
                 throw std::runtime_error("Subcomponent '" + name + "' not found.");
             }
-            return subcomponents_.at(name).get_instance<T>();
+            const auto& subcomponents = subcomponents_.at(name);
+            if (subcomponents.empty()) {
+                throw std::runtime_error(
+                    "Subcomponent slot '" + name + "' is empty.");
+            }
+            return subcomponents.front().get_instance<T>();
+        }
+
+        template <typename T>
+        std::vector<std::shared_ptr<T>> get_components(const std::string& name) const
+        {
+            if (subcomponents_.find(name) == subcomponents_.end()) {
+                throw std::runtime_error("Subcomponent '" + name + "' not found.");
+            }
+            std::vector<std::shared_ptr<T>> instances;
+            for (const auto& subcomponent : subcomponents_.at(name)) {
+                instances.push_back(subcomponent.get_instance<T>());
+            }
+            return instances;
         }
 
         std::vector<std::string> list_subcomponents() const
@@ -112,6 +169,20 @@ namespace rpp {
         }
 
         const ComponentContext& get_subcomponent_context(const std::string& name) const
+        {
+            if (subcomponents_.find(name) == subcomponents_.end()) {
+                throw std::runtime_error("Subcomponent '" + name + "' not found.");
+            }
+            const auto& subcomponents = subcomponents_.at(name);
+            if (subcomponents.empty()) {
+                throw std::runtime_error(
+                    "Subcomponent slot '" + name + "' is empty.");
+            }
+            return subcomponents.front();
+        }
+
+        const std::vector<ComponentContext>& get_subcomponent_contexts(
+            const std::string& name) const
         {
             if (subcomponents_.find(name) == subcomponents_.end()) {
                 throw std::runtime_error("Subcomponent '" + name + "' not found.");

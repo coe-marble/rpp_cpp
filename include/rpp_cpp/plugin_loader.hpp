@@ -5,6 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "plugin_def.hpp"
@@ -12,6 +13,7 @@
 #include "adapter_bases.hpp"
 #include "rpp_paths.hpp"
 #include "parameter_description.hpp"
+#include "logger.hpp"
 
 
 namespace rpp {
@@ -36,21 +38,32 @@ RppPtr<ClientAdapter> load_plugin_adapter_client(
         const PluginInfo& info,
         const std::string& name = "",
         const std::string& connection_name = "",
-        const std::string& create_symbol = "create_plugin_client");
+        const std::string& create_symbol = "create_plugin_client",
+        std::shared_ptr<RppLogger> logger = nullptr);
 
 RppPtr<ServerAdapter> load_plugin_adapter_server(
         const PluginInfo& info,
         RppPtr<Plugin>&& plugin_ptr,
         const std::string& name = "",
         const std::string& connection_name = "",
-        const std::string& create_symbol = "create_plugin_server");
+        const std::string& create_symbol = "create_plugin_server",
+        std::shared_ptr<RppLogger> logger = nullptr);
 
-template <typename BaseType>
+RppPtr<ServerAdapter> load_plugin_adapter_server(
+        const PluginInfo& info,
+        std::shared_ptr<Plugin> plugin_ptr,
+        const std::string& name = "",
+        const std::string& connection_name = "",
+        const std::string& create_symbol = "create_plugin_server",
+        std::shared_ptr<RppLogger> logger = nullptr);
+
+template <typename BaseType, typename... FactoryArgs>
 RppPtr<BaseType> load_from_shared_library__(
     const std::string& shared_library_path,
     const std::string& create_symbol = "create_plugin",
     bool delete_on_close = true,
-    bool allow_nullptr = false) {
+    bool allow_nullptr = false,
+    FactoryArgs&&... factory_args) {
 
     auto registry_dir = get_app_registry_dir();  // Ensure the registry directory is set up
     auto shared_library_path_abs = registry_dir + "/" + shared_library_path;
@@ -62,7 +75,7 @@ RppPtr<BaseType> load_from_shared_library__(
     }
 
     dlerror();
-    using FactoryFn = BaseType* (*)();
+    using FactoryFn = BaseType* (*)(std::decay_t<FactoryArgs>...);
     void* symbol = dlsym(handle, create_symbol.c_str());
     const char* symbol_error = dlerror();
     if (symbol_error != nullptr || symbol == nullptr) {
@@ -73,7 +86,7 @@ RppPtr<BaseType> load_from_shared_library__(
     }
 
     auto factory = reinterpret_cast<FactoryFn>(symbol);
-    BaseType* raw_plugin = factory();
+    BaseType* raw_plugin = factory(std::forward<FactoryArgs>(factory_args)...);
     if (raw_plugin == nullptr) {
         dlclose(handle);
         if (allow_nullptr) {
@@ -117,11 +130,13 @@ RppPtr<PluginBase> load_cpp_plugin_from_shared_library(
 template <typename BaseType>
 RppPtr<typename BaseType::AdapterClient> load_plugin_adapter_client(
     const std::string& name = "",
-    const std::string& connection_name = "")
+    const std::string& connection_name = "",
+    std::shared_ptr<RppLogger> logger = nullptr)
 {
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.
 
-    auto client = std::make_unique<typename BaseType::AdapterClient>();
+    auto client = std::make_unique<typename BaseType::AdapterClient>(
+        std::move(logger));
 
     ClientAdapterParams info_adapter;
     if (name.empty()) {
@@ -136,7 +151,6 @@ RppPtr<typename BaseType::AdapterClient> load_plugin_adapter_client(
     } else {
         info_adapter.connection_name = connection_name;
     }
-    info_adapter.name = name;
     client->configure_adapter_client__(
         std::make_shared<ClientAdapterParams>(std::move(info_adapter)));
 
@@ -147,19 +161,15 @@ template <typename PluginBase>
 RppPtr<typename PluginBase::AdapterServer> load_plugin_adapter_server(
         RppPtr<PluginBase>&& plugin_ptr,
         const std::string& name = "",
-        const std::string& connection_name = "") {
+        const std::string& connection_name = "",
+        std::shared_ptr<RppLogger> logger = nullptr) {
     // Here you can use the plugin_ptr as needed, for example, store it in a registry or call its methods.
-    auto server = std::make_unique<typename PluginBase::AdapterServer>();
+    auto server = std::make_unique<typename PluginBase::AdapterServer>(
+        std::move(logger));
 
     ServerAdapterParams info;
 
-    auto old_deleter = std::move(plugin_ptr.get_deleter());
-    auto* raw_derived = plugin_ptr.release();
-
-    // Set up the backend with a custom deleter that calls the old deleter
-    info.backend = RppPtr<Plugin>(raw_derived, [old_deleter](Plugin* p) {
-        old_deleter(static_cast<PluginBase*>(p));
-    });
+    info.backend = std::shared_ptr<Plugin>(std::move(plugin_ptr));
 
     if (name.empty()) {
         info.name =

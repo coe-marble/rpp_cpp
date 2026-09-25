@@ -110,17 +110,18 @@ namespace rpp {
                 std::move(configuration));
         }
 
-    private:
         ComponentContext build_script_from_description_path(
             const std::string& script_description_path,
-            std::optional<std::string> configuration)
+            std::optional<std::string> configuration = std::nullopt,
+            std::optional<std::string> parts_folder = std::nullopt)
         {
             const auto script_description = data_manager_.load_script_description(
                 script_description_path);
             const auto& components = get_script_components(
                 script_description, configuration);
-            const auto parts_folder = data_manager_
-                .get_default_script_parts_folder_path_from_description(
+            const auto resolved_parts_folder = parts_folder.has_value()
+                ? *parts_folder
+                : data_manager_.get_default_script_parts_folder_path_from_description(
                     script_description_path);
 
             std::vector<ComponentNode> roots;
@@ -129,7 +130,7 @@ namespace rpp {
                 for (const auto& component : assigned_components) {
                     const auto component_path =
                         data_manager_.get_component_path_in_parts_folder(
-                            parts_folder, component.plugin_name, component.id);
+                            resolved_parts_folder, component.plugin_name, component.id);
                     roots.push_back(make_component_node(
                         component_path, component_path, component.plugin_name));
                 }
@@ -142,7 +143,7 @@ namespace rpp {
                 for (const auto& component : assigned_components) {
                     const auto component_path =
                         data_manager_.get_component_path_in_parts_folder(
-                            parts_folder, component.plugin_name, component.id);
+                            resolved_parts_folder, component.plugin_name, component.id);
                     slot_subcomponents.push_back(build_for_component(
                         component_path, component_path, component.plugin_name));
                 }
@@ -150,6 +151,7 @@ namespace rpp {
             return ComponentContext(std::move(subcomponents), clock_options_);
         }
 
+    private:
         static const ScriptDescription::ComponentAssignments&
         get_script_components(
             const ScriptDescription& script_description,

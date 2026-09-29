@@ -118,7 +118,7 @@ endif()
 
 # Add custom target that writes RPP_CPP_CORE_PATH to a global rpp configuration file
 add_custom_target(write_rpp_cpp_core_path ALL
-  COMMAND rpp registry config RPP_CPP_CORE_PATH="${CMAKE_CURRENT_BINARY_DIR}"
+  COMMAND rpp registry config set RPP_CPP_CORE_PATH "${CMAKE_CURRENT_BINARY_DIR}"
   COMMENT "Writing RPP_CPP_CORE_PATH to .rpp configuration file..."
 )
 

@@ -1,9 +1,13 @@
 #pragma once
 
-#include <string>
-#include <string_view>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <stdexcept>
 
 namespace rpp {
@@ -37,6 +41,46 @@ private:
     LoggerOptions options_;
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
+};
+
+class LogThrottle {
+public:
+    template <typename Rep, typename Period>
+    explicit LogThrottle(const std::chrono::duration<Rep, Period>& period)
+        : period_(std::chrono::duration_cast<std::chrono::nanoseconds>(period))
+    {
+        if (period_ <= std::chrono::nanoseconds::zero())
+        {
+            throw std::invalid_argument("Log throttle period must be positive.");
+        }
+    }
+
+    bool should_log()
+    {
+        const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        auto last_log_time = last_log_time_.load(std::memory_order_relaxed);
+        while (true)
+        {
+            if (last_log_time != kNeverLogged
+                && now - last_log_time < period_.count())
+            {
+                return false;
+            }
+            if (last_log_time_.compare_exchange_weak(last_log_time, now,
+                    std::memory_order_relaxed, std::memory_order_relaxed))
+            {
+                return true;
+            }
+        }
+    }
+
+private:
+    static constexpr std::int64_t kNeverLogged =
+        std::numeric_limits<std::int64_t>::min();
+
+    std::chrono::nanoseconds period_;
+    std::atomic<std::int64_t> last_log_time_{kNeverLogged};
 };
 
 // Helper proxy class designed to capture runtime source file/line location metadata automatically
@@ -81,6 +125,23 @@ private:
     rpp::LogMessageBuilder(logger_inst, rpp::LogLevel::WARN,  __FILE__, __LINE__)(msg, ##__VA_ARGS__)
 #define RPP_LOG_ERROR(logger_inst, msg, ...) \
     rpp::LogMessageBuilder(logger_inst, rpp::LogLevel::ERROR, __FILE__, __LINE__)(msg, ##__VA_ARGS__)
+
+#define RPP_LOG_THROTTLE(logger_inst, level, period, msg, ...) \
+    do { \
+        static rpp::LogThrottle rpp_log_throttle(period); \
+        if (rpp_log_throttle.should_log()) { \
+            rpp::LogMessageBuilder(logger_inst, level, __FILE__, __LINE__)(msg, ##__VA_ARGS__); \
+        } \
+    } while (false)
+
+#define RPP_LOG_DEBUG_THROTTLE(logger_inst, period, msg, ...) \
+    RPP_LOG_THROTTLE(logger_inst, rpp::LogLevel::DEBUG, period, msg, ##__VA_ARGS__)
+#define RPP_LOG_INFO_THROTTLE(logger_inst, period, msg, ...) \
+    RPP_LOG_THROTTLE(logger_inst, rpp::LogLevel::INFO, period, msg, ##__VA_ARGS__)
+#define RPP_LOG_WARN_THROTTLE(logger_inst, period, msg, ...) \
+    RPP_LOG_THROTTLE(logger_inst, rpp::LogLevel::WARN, period, msg, ##__VA_ARGS__)
+#define RPP_LOG_ERROR_THROTTLE(logger_inst, period, msg, ...) \
+    RPP_LOG_THROTTLE(logger_inst, rpp::LogLevel::ERROR, period, msg, ##__VA_ARGS__)
 
 #define RPP_LOG_INFO_ONCE(logger_inst, msg, ...) \
     do { \

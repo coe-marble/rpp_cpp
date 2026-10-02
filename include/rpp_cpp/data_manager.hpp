@@ -168,6 +168,12 @@ public:
         }
 
         if (matches.empty()) {
+            const auto direct_description = descriptions_path /
+                (unqualified_name + ".json");
+            if (workspace_path_.parent_path().filename() == library_name &&
+                std::filesystem::is_regular_file(direct_description)) {
+                return direct_description.string();
+            }
             throw std::runtime_error(
                 "Script '" + qualified_name + "' is not present in workspace '" +
                 workspace_path_.parent_path().string() + "'.");

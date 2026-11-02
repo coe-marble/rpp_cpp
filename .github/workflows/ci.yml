@@ -19,11 +19,11 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     env:
-      ROS_DISTRO: jazzy
+      ROS_DISTRO: lyrical
     steps:
       - uses: ros-tooling/setup-ros@v0.7
         with:
-          required-ros-distributions: jazzy
+          required-ros-distributions: lyrical
       - name: Check out repository under test
         uses: actions/checkout@v4
         with:
@@ -67,7 +67,7 @@ jobs:
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Build and test
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/lyrical/setup.bash
           export PATH="$PWD/.venv/bin:$PATH"
           colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
           colcon test --packages-select rpp_cpp --event-handlers console_direct+

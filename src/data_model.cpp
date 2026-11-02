@@ -41,8 +41,11 @@ PluginInfo PluginInfo::from_json(const nlohmann::json& j) {
         }
         else if (type == "array") {
             std::vector<params::ParameterValue> list_values;
-            if (param_value.contains("elements") && param_value["elements"].is_array()) {
-                for (const auto& item : param_value["elements"]) {
+            const auto values = param_value.contains("elements")
+                ? param_value["elements"]
+                : param_value.value("default_value", nlohmann::json::array());
+            if (values.is_array()) {
+                for (const auto& item : values) {
                     list_values.push_back(parse_parameter_value(item));
                 }
             }
@@ -102,7 +105,9 @@ ComponentRecord ComponentRecord::from_json(
     if (j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object()) {
         const auto& parent_json = j["ParentComponentInfo"];
         ParentComponentInfo parent_info;
-        parent_info.id = get_safe_string_from_json(parent_json, "ComponentID", "");
+        parent_info.id = get_safe_string_from_json(
+            parent_json, "Id",
+            get_safe_string_from_json(parent_json, "ComponentID", ""));
         parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
         parent_info.plugin_name = get_safe_string_from_json(parent_json, "PluginName", "");
         parent_info.slot_name = get_safe_string_from_json(parent_json, "SlotName", "");
@@ -150,12 +155,16 @@ LinkedComponentRecord LinkedComponentRecord::from_json(
 {
     LinkedComponentRecord record;
     record.id = get_safe_string_from_json(j, "Id", "");
-    record.name = get_safe_string_from_json(j, "ComponentName", "");
+    record.name = get_safe_string_from_json(
+        j, "Name", get_safe_string_from_json(j, "ComponentName", ""));
     record.folder = component_path;
     record.linked_component_id = get_safe_string_from_json(j, "LinkedComponentId", "");
     record.linked_component_workspace = get_safe_string_from_json(j, "LinkedComponentWorkspace", "");
-    if (j.contains("ParentComponent") && j["ParentComponent"].is_object()) {
-        const auto& parent_json = j["ParentComponent"];
+    if ((j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object())
+        || (j.contains("ParentComponent") && j["ParentComponent"].is_object())) {
+        const auto& parent_json = j.contains("ParentComponentInfo")
+            ? j["ParentComponentInfo"]
+            : j["ParentComponent"];
         ParentComponentInfo parent_info;
         parent_info.id = get_safe_string_from_json(parent_json, "Id", "");
         parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
@@ -187,16 +196,24 @@ ScriptDescription ScriptDescription::from_json(
             ScriptDescription::ComponentAssignments assignments;
             for (const auto& [slot_name, components_json] :
                  configuration_json["Components"].items()) {
-                if (!components_json.is_array()) {
+                if (!components_json.is_array() && !components_json.is_object()) {
                     continue;
                 }
                 std::vector<ScriptComponent> components;
-                for (const auto& component_json : components_json) {
+                const auto add_component = [&components](const nlohmann::json& component_json) {
                     components.push_back({
                         get_safe_string_from_json(component_json, "Id", ""),
                         get_safe_string_from_json(
                             component_json, "PluginName", ""),
                     });
+                };
+                if (components_json.is_array()) {
+                    for (const auto& component_json : components_json) {
+                        add_component(component_json);
+                    }
+                }
+                else {
+                    add_component(components_json);
                 }
                 assignments[slot_name] = std::move(components);
             }

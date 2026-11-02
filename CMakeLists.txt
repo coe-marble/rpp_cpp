@@ -11,8 +11,9 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # find dependencies
-find_package(ament_cmake REQUIRED)
-find_package(CapnProto REQUIRED)
+find_package(ament_cmake QUIET)
+find_package(CapnProto 1.1.0 EXACT REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_package(pybind11 REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Development)
 find_package(rclcpp QUIET)
@@ -41,9 +42,10 @@ target_include_directories(rpp_cpp_core PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 if(rclcpp_FOUND)
-    target_compile_definitions(rpp_cpp_core PUBLIC USE_ROS2_LOGGING)
+    target_compile_definitions(rpp_cpp_core PUBLIC RPP_USE_ROS2_LOGGING)
     target_link_libraries(rpp_cpp_core PUBLIC rclcpp::rclcpp)
 else()
+    target_compile_definitions(rpp_cpp_core PUBLIC RPP_USE_SPDLOG_LOGGING)
     target_link_libraries(rpp_cpp_core PUBLIC spdlog::spdlog)
 endif()
 
@@ -62,6 +64,7 @@ PUBLIC
   rpp_cpp_core
   CapnProto::capnp
   CapnProto::capnp-rpc
+  nlohmann_json::nlohmann_json
 PRIVATE
   Python3::Python
   pybind11::embed
@@ -108,25 +111,32 @@ install(TARGETS rpp_cpp rpp_cpp_core
   RUNTIME DESTINATION bin
 )
 
-ament_export_targets(export_rpp_cpp HAS_LIBRARY_TARGET)
-ament_export_include_directories(include)
-if(rclcpp_FOUND)
-    ament_export_dependencies(CapnProto rclcpp)
-else()
-    ament_export_dependencies(CapnProto)
+if(ament_cmake_FOUND)
+  ament_export_targets(export_rpp_cpp HAS_LIBRARY_TARGET)
+  ament_export_include_directories(include)
+  if(rclcpp_FOUND)
+      ament_export_dependencies(CapnProto nlohmann_json rclcpp)
+  else()
+      ament_export_dependencies(CapnProto nlohmann_json spdlog)
+  endif()
 endif()
 
-# Add custom target that writes RPP_CPP_CORE_PATH to a global rpp configuration file
-add_custom_target(write_rpp_cpp_core_path ALL
-  COMMAND rpp registry config set RPP_CPP_CORE_PATH "${CMAKE_CURRENT_BINARY_DIR}"
-  COMMENT "Writing RPP_CPP_CORE_PATH to .rpp configuration file..."
-)
-
-add_dependencies(write_rpp_cpp_core_path rpp_cpp)
+# Write the runtime path only when the RPP CLI is available. This keeps a
+# standalone CMake build independent from the Python tooling.
+find_program(RPP_CLI_EXECUTABLE rpp)
+if(RPP_CLI_EXECUTABLE)
+  add_custom_target(write_rpp_cpp_core_path ALL
+    COMMAND ${RPP_CLI_EXECUTABLE} registry config set RPP_CPP_CORE_PATH "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMENT "Writing RPP_CPP_CORE_PATH to .rpp configuration file..."
+  )
+  add_dependencies(write_rpp_cpp_core_path rpp_cpp)
+else()
+  message(STATUS "rpp CLI not found; skipping RPP_CPP_CORE_PATH configuration.")
+endif()
 
 
 set(OVERRIDE_RPP_TEST false)
-if(BUILD_TESTING)
+if(BUILD_TESTING AND ament_cmake_FOUND)
 
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_gtest REQUIRED)
@@ -167,7 +177,10 @@ if(BUILD_TESTING)
   add_custom_target(run_rpp_autogen
     DEPENDS "${GENERATED_DIR}/gen_checked.stamp"
   )
-  add_dependencies(run_rpp_autogen rpp_cpp_core rpp_cpp write_rpp_cpp_core_path)
+  add_dependencies(run_rpp_autogen rpp_cpp_core rpp_cpp)
+  if(TARGET write_rpp_cpp_core_path)
+    add_dependencies(run_rpp_autogen write_rpp_cpp_core_path)
+  endif()
 
   # ---------------------------------------------------------------------------
   # STEP 3: BUILD TEST TARGETS
@@ -211,6 +224,10 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+elseif(BUILD_TESTING)
+  message(WARNING "C++ tests require ament_cmake; skipping them in a standalone CMake build.")
 endif()
 
-ament_package()
+if(ament_cmake_FOUND)
+  ament_package()
+endif()

@@ -1,15 +1,9 @@
 #include "rpp_cpp/logger.hpp"
 
 // Conditional compilation includes wrapped cleanly inside the header
-#if defined(USE_ROS2_COMPILATION) || defined(__has_include) && __has_include(<rclcpp/rclcpp.hpp>)
-    #ifndef USE_ROS2_COMPILATION
-        #define USE_ROS2_COMPILATION // Force-enable it if the header exists on the system
-    #endif
+#if defined(RPP_USE_ROS2_LOGGING)
     #include <rclcpp/rclcpp.hpp>
-#elif defined(USE_SPDLOG_COMPILATION)
-    #ifndef USE_SPDLOG_COMPILATION
-        #define USE_SPDLOG_COMPILATION // Force-enable it if the header exists on the system
-    #endif
+#elif defined(RPP_USE_SPDLOG_LOGGING)
     #include <spdlog/spdlog.hpp>
     #include <spdlog/sinks/stdout_color_sinks.h>
 #else
@@ -20,10 +14,10 @@
 namespace rpp {
 
 struct RppLogger::Impl {
-#if defined(USE_ROS2_COMPILATION)
+#if defined(RPP_USE_ROS2_LOGGING)
     // Unique ptr prevents cross-contamination of structures when ROS is absent
     std::shared_ptr<rclcpp::Logger> ros_logger;
-#elif defined(USE_SPDLOG_COMPILATION)
+#elif defined(RPP_USE_SPDLOG_LOGGING)
     std::shared_ptr<spdlog::logger> logger;
 #elif defined(USE_STD_LOGGING)
     std::string logger_name;
@@ -36,9 +30,9 @@ RppLogger::RppLogger(const LoggerOptions& options)
     : options_(options),
       pimpl_(std::make_unique<Impl>())
 {
-    #if defined(USE_ROS2_COMPILATION)
+    #if defined(RPP_USE_ROS2_LOGGING)
         pimpl_->ros_logger = std::make_shared<rclcpp::Logger>(rclcpp::get_logger(options_.name));
-    #elif defined(USE_SPDLOG_COMPILATION)
+    #elif defined(RPP_USE_SPDLOG_LOGGING)
         // Setup a named or default spdlog channel safely
         pimpl_->logger = spdlog::get(options_.name);
         if (!pimpl_->logger) {
@@ -54,9 +48,9 @@ RppLogger::RppLogger(const std::string& name)
     : options_({LogLevel::INFO, name}),
       pimpl_(std::make_unique<Impl>())
 {
-    #if defined(USE_ROS2_COMPILATION)
+    #if defined(RPP_USE_ROS2_LOGGING)
         pimpl_->ros_logger = std::make_shared<rclcpp::Logger>(rclcpp::get_logger(name));
-    #elif defined(USE_SPDLOG_COMPILATION)
+    #elif defined(RPP_USE_SPDLOG_LOGGING)
         pimpl_->logger = spdlog::get(name);
         if (!pimpl_->logger) {
             pimpl_->logger = spdlog::stdout_color_mt(name);
@@ -71,7 +65,11 @@ RppLogger::~RppLogger() = default;
     // Core log execution logic containing the underlying backends mapping
 void RppLogger::log(LogLevel level, const char* file, int line, std::string_view msg)
 {
-    #if defined(USE_ROS2_COMPILATION)
+    if (static_cast<int>(level) < static_cast<int>(options_.level)) {
+        return;
+    }
+
+    #if defined(RPP_USE_ROS2_LOGGING)
         if (!pimpl_->ros_logger) return;
         // Correct struct assignment order for rcutils: function, file, line
         rcutils_log_location_t location{"", file, static_cast<size_t>(line)};
@@ -86,7 +84,7 @@ void RppLogger::log(LogLevel level, const char* file, int line, std::string_view
 
         // Call the official public rcutils function to safely forward logs to ROS 2
         rcutils_log(&location, severity, pimpl_->ros_logger->get_name(), "%s", msg.data());
-    #elif defined(USE_SPDLOG_COMPILATION)
+    #elif defined(RPP_USE_SPDLOG_LOGGING)
         auto standard_logger = pimpl_->logger ? pimpl_->logger : spdlog::default_logger();
         spdlog::source_loc loc{file, line, ""};
         switch (level) {

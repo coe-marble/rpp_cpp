@@ -2,7 +2,7 @@ name: C++ tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, lyrical]
   pull_request:
     branches: [main, develop]
     types: [opened, synchronize, reopened]
@@ -29,6 +29,7 @@ jobs:
         shell: bash
     env:
       ROS_DISTRO: lyrical
+      PYTHONPATH: ${{ github.workspace }}/rpp_dev/src/rpp_testing
     steps:
       - name: Check out repository under test
         uses: actions/checkout@v4
@@ -38,7 +39,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: coe-marble/rpp_dev
-          ref: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          # rpp_cpp's ROS Lyrical branch is integrated against rpp_dev/main;
+          # the integration repository does not have a matching lyrical ref.
+          ref: ${{ github.event.pull_request.base.ref || (github.ref_name == 'lyrical' && 'main') || github.ref_name }}
           path: rpp_dev
           submodules: recursive
           token: ${{ secrets.RPP_CI_TOKEN || github.token }}
@@ -54,6 +57,9 @@ jobs:
       - name: Build and test
         run: |
           source /opt/ros/lyrical/setup.bash
-          colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/opt/rpp-test-venv/bin/python
+          # The first build generates Cap'n Proto sources that CMake discovers
+          # during the next configuration pass.
+          colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 || true
+          colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3
           colcon test --packages-select rpp_cpp --event-handlers console_direct+
           colcon test-result --verbose

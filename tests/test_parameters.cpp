@@ -15,12 +15,12 @@ using map_type = std::map<std::string, TestStruct1>;
 RPP_PARAM_STRUCT(TestStruct2,
     RPP_MEMBER(TestStruct1, test_struct, TestStruct1{42, "42", 42.0}),
     RPP_MEMBER(std::vector<TestStruct1>, test_struct_list, std::vector<TestStruct1>{
-        TestStruct1{640, "480", 30.0},
-        TestStruct1{800, "600", 60.0}
+  TestStruct1{640, "480", 30.0},
+  TestStruct1{800, "600", 60.0}
     }),
     RPP_MEMBER(map_type, test_struct_map, map_type{
-        {"first", TestStruct1{640, "480", 30.0}},
-        {"second", TestStruct1{800, "600", 60.0}}
+  {"first", TestStruct1{640, "480", 30.0}},
+  {"second", TestStruct1{800, "600", 60.0}}
     })
 )
 
@@ -29,33 +29,34 @@ RPP_PARAM_STRUCT(TestStruct3,
     RPP_MEMBER(int, width, 1),
     RPP_MEMBER(std::string, height, "2"),
     RPP_MEMBER(float, fps, 3.0),
-    RPP_MEMBER(map_type2, dict_var , map_type2{}),
+    RPP_MEMBER(map_type2, dict_var, map_type2{}),
     RPP_MEMBER(TestStruct1, test_struct, TestStruct1{})
 )
 
 class TestParameters : public ::testing::Test {
 
 public:
+  using ParametersDescription = std::vector<rpp::params::ParameterDescription>;
+  using ParameterDescription = rpp::params::ParameterDescription;
+  using ParameterValue = rpp::params::ParameterValue;
 
-    using ParametersDescription = std::vector<rpp::params::ParameterDescription>;
-    using ParameterDescription = rpp::params::ParameterDescription;
-    using ParameterValue = rpp::params::ParameterValue;
 
-
-    static std::string test_lib;
-    static std::string test_data_dir;
-    static bool initialization_successful;
+  static std::string test_lib;
+  static std::string test_data_dir;
+  static bool initialization_successful;
 
 protected:
-    static void SetUpTestSuite() {
-        test_lib = "test_lib";
-        test_data_dir = std::getenv("TEST_DATA_DIR");
-        initialization_successful = true;
-    }
+  static void SetUpTestSuite()
+  {
+    test_lib = "test_lib";
+    test_data_dir = std::getenv("TEST_DATA_DIR");
+    initialization_successful = true;
+  }
 
-    static void TearDownTestSuite() {
+  static void TearDownTestSuite()
+  {
         // std::filesystem::remove_all(tmp_dir);
-    }
+  }
 
 };
 
@@ -92,112 +93,113 @@ TEST_F(TestParameters, TestParameterStructReflection) {
 
 TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
     ParametersDescription parameters_description
-        {
-            ParameterDescription::create(
+  {
+    ParameterDescription::create(
                 "test_param_double", double{30.0}),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_int", int{40}),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_string", std::string{"Test"}),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_bool", bool{true}),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_struct",
                 TestStruct1{
-                    1, "2", 3.0
+      1, "2", 3.0
                 }),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_list_primitive", std::vector<int>{1, 2, 3}),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_list_struct", std::vector<TestStruct1>{
-                    TestStruct1{1, "2", 3.0},
-                    TestStruct1{4, "5", 6.0}
+      TestStruct1{1, "2", 3.0},
+      TestStruct1{4, "5", 6.0}
                 }),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_map_struct", std::map<std::string, TestStruct1>{
-                    {"first", TestStruct1{1, "2", 3.0}},
-                    {"second", TestStruct1{4, "5", 6.0}}
+      {"first", TestStruct1{1, "2", 3.0}},
+      {"second", TestStruct1{4, "5", 6.0}}
                 }),
-            ParameterDescription::create(
+    ParameterDescription::create(
                 "test_param_struct2", TestStruct2{})
         };
 
     std::map<std::string, ParameterValue> parameters_instance
-    {
-        {"test_param_double", 31.0},
-        {"test_param_int", 41},
+  {
+    {"test_param_double", 31.0},
+    {"test_param_int", 41},
         // {"test_param_string", std::string{"Test1"}}, // test default value for string
-        {"test_param_bool", true},
-        {"test_param_struct_invalid", std::map<std::string, ParameterValue>{
+    {"test_param_bool", true},
+    {"test_param_struct_invalid", std::map<std::string, ParameterValue>{
             // {"width", 2}, to test default value for width
-            {"height", std::string{"3"}},
-            {"fps", 4.0}
-        }},
-        {"test_param_struct", std::map<std::string, ParameterValue>{
+        {"height", std::string{"3"}},
+        {"fps", 4.0}
+      }},
+    {"test_param_struct", std::map<std::string, ParameterValue>{
+        {"width", 2},
+        {"height", std::string{"3"}},
+        {"fps", 4.0}
+      }},
+    {"test_param_list_primitive", std::vector<ParameterValue>{2, 3, 4}},
+    {"test_param_list_struct", std::vector<ParameterValue>{
+        ParameterValue(std::map<std::string, ParameterValue>{
+          {"width", 2},
+          {"height", std::string{"3"}},
+          {"fps", 4.0}
+            }),
+        ParameterValue(std::map<std::string, ParameterValue>{
+          {"width", 5},
+          {"height", std::string{"6"}},
+          {"fps", 7.0}
+            })
+      }},
+    {"test_param_map_struct", std::map<std::string, ParameterValue>{
+        {"first", ParameterValue(std::map<std::string, ParameterValue>{
             {"width", 2},
             {"height", std::string{"3"}},
             {"fps", 4.0}
-        }},
-        {"test_param_list_primitive", std::vector<ParameterValue>{2, 3, 4}},
-        {"test_param_list_struct", std::vector<ParameterValue>{
-            ParameterValue(std::map<std::string, ParameterValue>{
-                {"width", 2},
-                {"height", std::string{"3"}},
-                {"fps", 4.0}
-            }),
-            ParameterValue(std::map<std::string, ParameterValue>{
-                {"width", 5},
-                {"height", std::string{"6"}},
-                {"fps", 7.0}
-            })
-        }},
-        {"test_param_map_struct", std::map<std::string, ParameterValue>{
-            {"first", ParameterValue(std::map<std::string, ParameterValue>{
-                {"width", 2},
-                {"height", std::string{"3"}},
-                {"fps", 4.0}
             })},
-            {"second", ParameterValue(std::map<std::string, ParameterValue>{
-                {"width", 5},
-                {"height", std::string{"6"}},
-                {"fps", 7.0}
+        {"second", ParameterValue(std::map<std::string, ParameterValue>{
+            {"width", 5},
+            {"height", std::string{"6"}},
+            {"fps", 7.0}
             })}
-        }},
-        {"test_param_struct2", ParameterValue(std::map<std::string, ParameterValue>{
-            {"test_struct", ParameterValue(std::map<std::string, ParameterValue>{
+      }},
+    {"test_param_struct2", ParameterValue(std::map<std::string, ParameterValue>{
+        {"test_struct", ParameterValue(std::map<std::string, ParameterValue>{
+            {"width", 3},
+            {"height", std::string{"4"}},
+            {"fps", 5.0}
+            })},
+        {"test_struct_list", ParameterValue(std::vector<ParameterValue>{
+            ParameterValue(std::map<std::string, ParameterValue>{
+              {"width", 3},
+              {"height", std::string{"4"}},
+              {"fps", 5.0}
+                }),
+            ParameterValue(std::map<std::string, ParameterValue>{
+              {"width", 6},
+              {"height", std::string{"7"}},
+              {"fps", 8.0}
+                })
+            })},
+        {"test_struct_map", ParameterValue(std::map<std::string, ParameterValue>{
+            {"first", ParameterValue(std::map<std::string, ParameterValue>{
                 {"width", 3},
                 {"height", std::string{"4"}},
                 {"fps", 5.0}
-            })},
-            {"test_struct_list", ParameterValue(std::vector<ParameterValue>{
-                ParameterValue(std::map<std::string, ParameterValue>{
-                    {"width", 3},
-                    {"height", std::string{"4"}},
-                    {"fps", 5.0}
-                }),
-                ParameterValue(std::map<std::string, ParameterValue>{
-                    {"width", 6},
-                    {"height", std::string{"7"}},
-                    {"fps", 8.0}
-                })
-            })},
-            {"test_struct_map", ParameterValue(std::map<std::string, ParameterValue>{
-                {"first", ParameterValue(std::map<std::string, ParameterValue>{
-                    {"width", 3},
-                    {"height", std::string{"4"}},
-                    {"fps", 5.0}
                 })},
-                {"second", ParameterValue(std::map<std::string, ParameterValue>{
-                    {"width", 6},
-                    {"height", std::string{"7"}},
-                    {"fps", 8.0}
+            {"second", ParameterValue(std::map<std::string, ParameterValue>{
+                {"width", 6},
+                {"height", std::string{"7"}},
+                {"fps", 8.0}
                 })}
             })}
         })}
     };
 
     std::unique_ptr<rpp::params::Parameters> params;
-    rpp::params::ParameterHandler::resolve_params(parameters_description, parameters_instance, params);
+    rpp::params::ParameterHandler::resolve_params(parameters_description, parameters_instance,
+    params);
 
     ASSERT_EQ(params->get<double>("test_param_double"), 31.0);
     ASSERT_EQ(params->get<int>("test_param_int"), 41);
@@ -205,10 +207,10 @@ TEST_F(TestParameters, TestCreateParametersDescriptionAndConversion) {
     ASSERT_EQ(params->get<bool>("test_param_bool"), true);
     // this throws an exception if the parameter is not found or if the type does not match
     try {
-        auto struct1 = params->get<TestStruct1>("test_param_struct_invalid");
-    } catch (const std::exception& e) {
-        auto message = std::string(e.what());
-        ASSERT_TRUE(message.find("Field 'width' not found") == std::string::npos);
+    auto struct1 = params->get<TestStruct1>("test_param_struct_invalid");
+    } catch (const std::exception & e) {
+    auto message = std::string(e.what());
+    ASSERT_TRUE(message.find("Field 'width' not found") == std::string::npos);
     }
 
     ASSERT_EQ(params->get<TestStruct1>("test_param_struct").width, 2);
@@ -295,22 +297,27 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
     ASSERT_EQ(struct_var["width"].get<int>(), 1);
     ASSERT_EQ(struct_var["height"].get<std::string>(), "2");
     ASSERT_EQ(struct_var["fps"].get<float>(), 3.0);
-    auto struct_var2 = loaded_params["complext_struct_var"].get<std::map<std::string, ParameterValue>>();
-    auto struct_var2_test_struct = struct_var2["test_struct"].get<std::map<std::string, ParameterValue>>();
+    auto struct_var2 = loaded_params["complext_struct_var"].get<std::map<std::string,
+      ParameterValue>>();
+    auto struct_var2_test_struct = struct_var2["test_struct"].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct["width"].get<int>(), 1);
     ASSERT_EQ(struct_var2_test_struct["height"].get<std::string>(), "2");
     ASSERT_EQ(struct_var2_test_struct["fps"].get<float>(), 3.0);
     auto struct_var2_test_struct_list = struct_var2["test_struct_list"].get<std::vector<ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct_list.size(), 2);
-    auto struct_var2_test_struct_list_0 = struct_var2_test_struct_list[0].get<std::map<std::string, ParameterValue>>();
+    auto struct_var2_test_struct_list_0 = struct_var2_test_struct_list[0].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct_list_0["width"].get<int>(), 1);
     ASSERT_EQ(struct_var2_test_struct_list_0["height"].get<std::string>(), "2");
     ASSERT_EQ(struct_var2_test_struct_list_0["fps"].get<float>(), 3.0);
-    auto struct_var2_test_struct_list_1 = struct_var2_test_struct_list[1].get<std::map<std::string, ParameterValue>>();
+    auto struct_var2_test_struct_list_1 = struct_var2_test_struct_list[1].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct_list_1["width"].get<int>(), 2);
     ASSERT_EQ(struct_var2_test_struct_list_1["height"].get<std::string>(), "3");
     ASSERT_EQ(struct_var2_test_struct_list_1["fps"].get<float>(), 4.0);
-    auto struct_var2_test_struct_map = struct_var2["test_struct_map"].get<std::map<std::string, ParameterValue>>();
+    auto struct_var2_test_struct_map = struct_var2["test_struct_map"].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct_map.size(), 2);
     auto struct_var2_test_struct_map_first = struct_var2_test_struct_map["first"].get<std::map<std::string, ParameterValue>>();
     ASSERT_EQ(struct_var2_test_struct_map_first["width"].get<int>(), 1);
@@ -320,13 +327,16 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModule) {
     ASSERT_EQ(struct_var2_test_struct_map_second["width"].get<int>(), 5);
     ASSERT_EQ(struct_var2_test_struct_map_second["height"].get<std::string>(), "6");
     ASSERT_EQ(struct_var2_test_struct_map_second["fps"].get<float>(), 7.0);
-    auto non_dataclass_var = loaded_params["non_dataclass_var"].get<std::map<std::string, ParameterValue>>();
+    auto non_dataclass_var = loaded_params["non_dataclass_var"].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(non_dataclass_var["width"].get<int>(), 1);
     ASSERT_EQ(non_dataclass_var["height"].get<std::string>(), "2");
     ASSERT_EQ(non_dataclass_var["fps"].get<float>(), 3.0);
-    auto non_dataclass_dict_var = non_dataclass_var["dict_var"].get<std::map<std::string, ParameterValue>>();
+    auto non_dataclass_dict_var = non_dataclass_var["dict_var"].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(non_dataclass_dict_var["key"].get<std::string>(), "value");
-    auto non_dataclass_test_struct = non_dataclass_var["test_struct"].get<std::map<std::string, ParameterValue>>();
+    auto non_dataclass_test_struct = non_dataclass_var["test_struct"].get<std::map<std::string,
+      ParameterValue>>();
     ASSERT_EQ(non_dataclass_test_struct["width"].get<int>(), 1);
     ASSERT_EQ(non_dataclass_test_struct["height"].get<std::string>(), "2");
     ASSERT_EQ(non_dataclass_test_struct["fps"].get<float>(), 3.0);
@@ -338,29 +348,28 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
         test_data_dir + "/test_component_cpp_params");
 
     ParametersDescription parameters
-    {
-        ParameterDescription::create<float>("float_var"),
-        ParameterDescription::create<int>("int_var"),
-        ParameterDescription::create<std::string>("str_var"),
-        ParameterDescription::create<std::vector<int>>("list_var"),
-        ParameterDescription::create<std::map<std::string, std::string>>("dict_var"),
-        ParameterDescription::create<std::vector<std::map<std::string, std::string>>>("list_dict_var"),
-        ParameterDescription::create<std::map<std::string, std::vector<int>>>("dict_list_var"),
-        ParameterDescription::create<TestStruct1>("struct_var"),
-        ParameterDescription::create<TestStruct2>("complext_struct_var"),
-        ParameterDescription::create<TestStruct3>("non_dataclass_var"),
+  {
+    ParameterDescription::create<float>("float_var"),
+    ParameterDescription::create<int>("int_var"),
+    ParameterDescription::create<std::string>("str_var"),
+    ParameterDescription::create<std::vector<int>>("list_var"),
+    ParameterDescription::create<std::map<std::string, std::string>>("dict_var"),
+    ParameterDescription::create<std::vector<std::map<std::string, std::string>>>("list_dict_var"),
+    ParameterDescription::create<std::map<std::string, std::vector<int>>>("dict_list_var"),
+    ParameterDescription::create<TestStruct1>("struct_var"),
+    ParameterDescription::create<TestStruct2>("complext_struct_var"),
+    ParameterDescription::create<TestStruct3>("non_dataclass_var"),
 
     };
     auto loaded_params = parameter_handler->load_parameters_from_python_module();
     std::unique_ptr<rpp::params::Parameters> params;
     rpp::params::ParameterHandler::resolve_params(parameters, loaded_params, params);
 
-    try{
-        params->get<float>("non_existent_param");
-    }
-    catch (const std::exception& e) {
-        auto message = std::string(e.what());
-        ASSERT_TRUE(message.find("Parameter 'non_existent_param' not found") != std::string::npos);
+    try {
+    params->get<float>("non_existent_param");
+    } catch (const std::exception & e) {
+    auto message = std::string(e.what());
+    ASSERT_TRUE(message.find("Parameter 'non_existent_param' not found") != std::string::npos);
     }
 
     ASSERT_EQ(params->get<float>("float_var"), 5.0f);
@@ -423,11 +432,12 @@ TEST_F(TestParameters, TestLoadParametersFromPythonModuleAndResolve) {
 
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
+int main(int argc, char **argv)
+{
+  ::testing::InitGoogleTest(&argc, argv);
 
-    setenv("TEST_DATA_DIR", TEST_DATA_DIR, 1);
+  setenv("TEST_DATA_DIR", TEST_DATA_DIR, 1);
 
     // Pokrećemo GoogleTest najnormalnije
-    return RUN_ALL_TESTS();
+  return RUN_ALL_TESTS();
 }

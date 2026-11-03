@@ -11,87 +11,91 @@
 #include <capnp/rpc-twoparty.h>
 
 
-namespace rpp {
+namespace rpp
+{
 
 class ComponentCallExecutor;
 
 class RppRuntimeClientContext {
 
-    using VatId = capnp::rpc::twoparty::VatId;
-    public:
-        RppRuntimeClientContext(const std::string& host, uint16_t port,
-                      std::chrono::milliseconds timeout = std::chrono::seconds(5),
-                      kj::AsyncIoContext* io = nullptr)
-            : host_(host), port_(port),
-              owned_io_(io == nullptr
-                  ? std::make_unique<kj::AsyncIoContext>(kj::setupAsyncIo())
-                  : nullptr),
-              io_(io != nullptr ? io : owned_io_.get())
-        {
-            auto& network = io_->provider->getNetwork();
-            const auto deadline = std::chrono::steady_clock::now() + timeout;
-            while (true) {
-                try {
-                    auto address = network.parseAddress(host_, port_).wait(io_->waitScope);
-                    stream_ = address->connect().wait(io_->waitScope);
-                    break;
-                } catch (const kj::Exception&) {
-                    if (std::chrono::steady_clock::now() >= deadline) {
-                        throw;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                }
-            }
+  using VatId = capnp::rpc::twoparty::VatId;
 
-            vat_network_ = kj::heap<capnp::TwoPartyVatNetwork>(
+public:
+  RppRuntimeClientContext(
+    const std::string & host, uint16_t port,
+    std::chrono::milliseconds timeout = std::chrono::seconds(5),
+    kj::AsyncIoContext * io = nullptr)
+  : host_(host), port_(port),
+    owned_io_(io == nullptr ?
+      std::make_unique<kj::AsyncIoContext>(kj::setupAsyncIo()) :
+      nullptr),
+    io_(io != nullptr ? io : owned_io_.get())
+  {
+    auto & network = io_->provider->getNetwork();
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (true) {
+      try {
+        auto address = network.parseAddress(host_, port_).wait(io_->waitScope);
+        stream_ = address->connect().wait(io_->waitScope);
+        break;
+      } catch (const kj::Exception &) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+          throw;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
+
+    vat_network_ = kj::heap<capnp::TwoPartyVatNetwork>(
                 *stream_, capnp::rpc::twoparty::Side::CLIENT);
 
-            client_ = kj::heap<capnp::RpcSystem<VatId>>(*vat_network_, nullptr);
-        }
+    client_ = kj::heap<capnp::RpcSystem<VatId>>(*vat_network_, nullptr);
+  }
 
-        capnp::Capability::Client get_client() const {
-            VatId::Reader vat_id_msg;
-            return client_->bootstrap(vat_id_msg);
-        }
+  capnp::Capability::Client get_client() const
+  {
+    VatId::Reader vat_id_msg;
+    return client_->bootstrap(vat_id_msg);
+  }
 
-        const std::string& get_host() const { return host_; }
-        uint16_t get_port() const { return port_; }
-        const kj::AsyncIoContext& get_io_context() const { return *io_; }
-    private:
-        std::string host_;
-        uint16_t port_;
-        std::unique_ptr<kj::AsyncIoContext> owned_io_;
-        kj::AsyncIoContext* io_;
-        kj::Own<kj::AsyncIoStream> stream_;
-        kj::Own<capnp::TwoPartyVatNetwork> vat_network_;
-        mutable kj::Own<capnp::RpcSystem<capnp::rpc::twoparty::VatId>> client_;
+  const std::string & get_host() const {return host_;}
+  uint16_t get_port() const {return port_;}
+  const kj::AsyncIoContext & get_io_context() const {return *io_;}
+
+private:
+  std::string host_;
+  uint16_t port_;
+  std::unique_ptr<kj::AsyncIoContext> owned_io_;
+  kj::AsyncIoContext * io_;
+  kj::Own<kj::AsyncIoStream> stream_;
+  kj::Own<capnp::TwoPartyVatNetwork> vat_network_;
+  mutable kj::Own<capnp::RpcSystem<capnp::rpc::twoparty::VatId>> client_;
 };
 
 
 class ServerAdapter {
-    public:
-        virtual ~ServerAdapter() = default;
-        virtual bool configure_adapter_server__(
-            std::shared_ptr<ServerAdapterParams> info) = 0;
-        virtual void start_adapter_server__(
-            kj::AsyncIoContext& io, std::string host, uint16_t port) = 0;
-        virtual capnp::Capability::Client create_capability_adapter_server__() = 0;
-        virtual void close_adapter_server__() = 0;
-        virtual const ServerAdapterInfo& get_info_adapter_server__() const = 0;
+public:
+  virtual ~ServerAdapter() = default;
+  virtual bool configure_adapter_server__(
+    std::shared_ptr<ServerAdapterParams> info) = 0;
+  virtual void start_adapter_server__(
+    kj::AsyncIoContext & io, std::string host, uint16_t port) = 0;
+  virtual capnp::Capability::Client create_capability_adapter_server__() = 0;
+  virtual void close_adapter_server__() = 0;
+  virtual const ServerAdapterInfo & get_info_adapter_server__() const = 0;
 
-    };
-
-class ClientAdapter {
-    public:
-        virtual ~ClientAdapter() = default;
-        virtual bool configure_adapter_client__(std::shared_ptr<ClientAdapterParams> info) = 0;
-        virtual bool connect_adapter_client__(
-            const RppRuntimeClientContext& context,
-            std::optional<std::reference_wrapper<ComponentCallExecutor>> executor =
-                std::nullopt) = 0;
-        virtual const ClientAdapterInfo& get_info_adapter_client__() const = 0;
 };
 
+class ClientAdapter {
+public:
+  virtual ~ClientAdapter() = default;
+  virtual bool configure_adapter_client__(std::shared_ptr<ClientAdapterParams> info) = 0;
+  virtual bool connect_adapter_client__(
+    const RppRuntimeClientContext & context,
+    std::optional<std::reference_wrapper<ComponentCallExecutor>> executor =
+    std::nullopt) = 0;
+  virtual const ClientAdapterInfo & get_info_adapter_client__() const = 0;
+};
 
 
 }  // namespace rpp

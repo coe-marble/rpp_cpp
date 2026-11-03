@@ -12,42 +12,43 @@
 #include <sys/types.h>
 #endif
 
-namespace rpp {
+namespace rpp
+{
 
 class ChildProcess final {
 public:
-    explicit ChildProcess(std::vector<std::string> args)
-        : args_(std::move(args))
-    {
-        if (args_.empty() || args_[0].empty()) {
-            throw std::invalid_argument("Child process requires a command.");
-        }
+  explicit ChildProcess(std::vector<std::string> args)
+  : args_(std::move(args))
+  {
+    if (args_.empty() || args_[0].empty()) {
+      throw std::invalid_argument("Child process requires a command.");
     }
+  }
 
-    ChildProcess(const ChildProcess&) = delete;
-    ChildProcess& operator=(const ChildProcess&) = delete;
-    ChildProcess(ChildProcess&&) = delete;
-    ChildProcess& operator=(ChildProcess&&) = delete;
+  ChildProcess(const ChildProcess &) = delete;
+  ChildProcess & operator=(const ChildProcess &) = delete;
+  ChildProcess(ChildProcess &&) = delete;
+  ChildProcess & operator=(ChildProcess &&) = delete;
 
-    ~ChildProcess() { cleanup(); }
+  ~ChildProcess() {cleanup();}
 
-    void start();
-    bool running();
-    int wait(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
-    void terminate();
-    void kill();
+  void start();
+  bool running();
+  int wait(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
+  void terminate();
+  void kill();
 
 private:
-    void cleanup() noexcept;
+  void cleanup() noexcept;
 
 #ifndef _WIN32
-    pid_t pid_ = -1;
+  pid_t pid_ = -1;
 #else
-    HANDLE process_handle_ = nullptr;
+  HANDLE process_handle_ = nullptr;
 #endif
-    std::vector<std::string> args_;
-    int exit_code_ = -1;
-    bool started_ = false;
+  std::vector<std::string> args_;
+  int exit_code_ = -1;
+  bool started_ = false;
 };
 
 }  // namespace rpp

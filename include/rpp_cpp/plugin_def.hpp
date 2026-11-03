@@ -1,17 +1,17 @@
 #pragma once
 
-namespace rpp {
+namespace rpp
+{
 
 class ComponentContext;
 
 class Plugin {
 public:
-    virtual ~Plugin() = default;
+  virtual ~Plugin() = default;
 
-    virtual void initialize(const ComponentContext& context) = 0;
-    virtual void reset() {};
+  virtual void initialize(const ComponentContext & context) = 0;
+  virtual void reset() {}
 };
-
 
 
 }  // namespace rpp

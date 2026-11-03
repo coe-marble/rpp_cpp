@@ -1,232 +1,231 @@
 #include "rpp_cpp/data_model.hpp"
 #include <nlohmann/json.hpp>
 
-namespace rpp {
-
-std::string get_safe_string_from_json(const nlohmann::json& j,
-    const std::string& key, const std::string& default_val)
+namespace rpp
 {
-    return (j.contains(key) && !j[key].is_null()) ? j[key].get<std::string>() : default_val;
+
+std::string get_safe_string_from_json(
+  const nlohmann::json & j,
+  const std::string & key, const std::string & default_val)
+{
+  return (j.contains(key) && !j[key].is_null()) ? j[key].get<std::string>() : default_val;
 }
 
 
-PluginInfo PluginInfo::from_json(const nlohmann::json& j) {
-    PluginInfo info;
-    info.plugin_name = get_safe_string_from_json(j, "PluginName", "");
-    info.source_language = get_safe_string_from_json(j, "SourceLanguage", "");
-    info.library = get_safe_string_from_json(j, "Library", "");
-    info.plugin_type_name = get_safe_string_from_json(j, "PluginType", "");
-    info.class_name = get_safe_string_from_json(j, "ClassName", "");
-    info.source_file = get_safe_string_from_json(j, "SourceFile", "");
-    info.plugin_shared_library_path = get_safe_string_from_json(j, "PluginSharedLibraryPath", "");
-    info.plugin_type_shared_library_path = get_safe_string_from_json(j, "PluginTypeSharedLibraryPath", "");
+PluginInfo PluginInfo::from_json(const nlohmann::json & j)
+{
+  PluginInfo info;
+  info.plugin_name = get_safe_string_from_json(j, "PluginName", "");
+  info.source_language = get_safe_string_from_json(j, "SourceLanguage", "");
+  info.library = get_safe_string_from_json(j, "Library", "");
+  info.plugin_type_name = get_safe_string_from_json(j, "PluginType", "");
+  info.class_name = get_safe_string_from_json(j, "ClassName", "");
+  info.source_file = get_safe_string_from_json(j, "SourceFile", "");
+  info.plugin_shared_library_path = get_safe_string_from_json(j, "PluginSharedLibraryPath", "");
+  info.plugin_type_shared_library_path = get_safe_string_from_json(j, "PluginTypeSharedLibraryPath",
+      "");
 
 
-    std::function<params::ParameterValue(const nlohmann::json&)>
-    parse_parameter_value =
-        [&parse_parameter_value](const nlohmann::json& param_value) -> params::ParameterValue
+  std::function<params::ParameterValue(const nlohmann::json &)>
+  parse_parameter_value =
+    [&parse_parameter_value](const nlohmann::json & param_value) -> params::ParameterValue
     {
-        auto type = param_value.value("type", "");
-        if (type == "int") {
-            return params::ParameterValue(param_value.value("default_value", 0));
+      auto type = param_value.value("type", "");
+      if (type == "int") {
+        return params::ParameterValue(param_value.value("default_value", 0));
+      } else if (type == "float") {
+        return params::ParameterValue(param_value.value("default_value", 0.0));
+      } else if (type == "bool") {
+        return params::ParameterValue(param_value.value("default_value", false));
+      } else if (type == "string") {
+        return params::ParameterValue(param_value.value("default_value", std::string()));
+      } else if (type == "array") {
+        std::vector<params::ParameterValue> list_values;
+        const auto values = param_value.contains("elements") ?
+          param_value["elements"] :
+          param_value.value("default_value", nlohmann::json::array());
+        if (values.is_array()) {
+          for (const auto & item : values) {
+            list_values.push_back(parse_parameter_value(item));
+          }
         }
-        else if (type == "float") {
-            return params::ParameterValue(param_value.value("default_value", 0.0));
+        return params::ParameterValue(list_values);
+      } else if (type == "object") {
+        std::map<std::string, params::ParameterValue> dict_values;
+        if (param_value.contains("fields") && param_value["fields"].is_object()) {
+          for (auto & [key, value] : param_value["fields"].items()) {
+            dict_values[key] = parse_parameter_value(value);
+          }
         }
-        else if (type == "bool") {
-            return params::ParameterValue(param_value.value("default_value", false));
-        }
-        else if (type == "string") {
-            return params::ParameterValue(param_value.value("default_value", std::string()));
-        }
-        else if (type == "array") {
-            std::vector<params::ParameterValue> list_values;
-            const auto values = param_value.contains("elements")
-                ? param_value["elements"]
-                : param_value.value("default_value", nlohmann::json::array());
-            if (values.is_array()) {
-                for (const auto& item : values) {
-                    list_values.push_back(parse_parameter_value(item));
-                }
-            }
-            return params::ParameterValue(list_values);
-        }
-        else if (type == "object") {
-            std::map<std::string, params::ParameterValue> dict_values;
-            if (param_value.contains("fields") && param_value["fields"].is_object()) {
-                for (auto& [key, value] : param_value["fields"].items()) {
-                    dict_values[key] = parse_parameter_value(value);
-                }
-            }
-            return params::ParameterValue(dict_values);
-        }
-        else {
-            throw std::runtime_error("Unsupported parameter value type.");
-        }
+        return params::ParameterValue(dict_values);
+      } else {
+        throw std::runtime_error("Unsupported parameter value type.");
+      }
     };
 
 
-    if (j.contains("PluginMetadata") && j["PluginMetadata"].is_object())
-    {
-        const auto& metadata_json = j["PluginMetadata"];
-        if (metadata_json.contains("Components") && metadata_json["Components"].is_object())
-        {
-            for (auto& [comp_id, comp_name] : metadata_json["Components"].items())
-                info.plugin_metadata.components[comp_id] = comp_name.get<std::string>();
-        }
-        if (metadata_json.contains("Parameters") && metadata_json["Parameters"].is_object())
-        {
-            for (auto& [param_name, param_value] : metadata_json["Parameters"].items())
-                info.plugin_metadata.parameters[param_name] = parse_parameter_value(param_value);
-        }
+  if (j.contains("PluginMetadata") && j["PluginMetadata"].is_object()) {
+    const auto & metadata_json = j["PluginMetadata"];
+    if (metadata_json.contains("Components") && metadata_json["Components"].is_object()) {
+      for (auto & [comp_id, comp_name] : metadata_json["Components"].items()) {
+        info.plugin_metadata.components[comp_id] = comp_name.get<std::string>();
+      }
     }
+    if (metadata_json.contains("Parameters") && metadata_json["Parameters"].is_object()) {
+      for (auto & [param_name, param_value] : metadata_json["Parameters"].items()) {
+        info.plugin_metadata.parameters[param_name] = parse_parameter_value(param_value);
+      }
+    }
+  }
 
-    return info;
+  return info;
 }
 
 
 ComponentRecord ComponentRecord::from_json(
-    const nlohmann::json& j, const std::string& component_path)
+  const nlohmann::json & j, const std::string & component_path)
 {
-    ComponentRecord record;
-    record.id = get_safe_string_from_json(j, "Id", "");
-    record.name = get_safe_string_from_json(j, "Name", "");
-    record.plugin_type = get_safe_string_from_json(j, "PluginType", "");
-    record.plugin_name = get_safe_string_from_json(j, "PluginName", "");
-    record.folder = component_path;
-    record.library = get_safe_string_from_json(j, "Library", "");
+  ComponentRecord record;
+  record.id = get_safe_string_from_json(j, "Id", "");
+  record.name = get_safe_string_from_json(j, "Name", "");
+  record.plugin_type = get_safe_string_from_json(j, "PluginType", "");
+  record.plugin_name = get_safe_string_from_json(j, "PluginName", "");
+  record.folder = component_path;
+  record.library = get_safe_string_from_json(j, "Library", "");
 
-    if (j.contains("SubcomponentSpec") && j["SubcomponentSpec"].is_object()) {
-        for (auto& [slot_name, sub_name] : j["SubcomponentSpec"].items()) {
-            record.subcomponent_spec[slot_name] = sub_name.get<std::string>();
-        }
+  if (j.contains("SubcomponentSpec") && j["SubcomponentSpec"].is_object()) {
+    for (auto & [slot_name, sub_name] : j["SubcomponentSpec"].items()) {
+      record.subcomponent_spec[slot_name] = sub_name.get<std::string>();
     }
+  }
 
-    if (j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object()) {
-        const auto& parent_json = j["ParentComponentInfo"];
-        ParentComponentInfo parent_info;
-        parent_info.id = get_safe_string_from_json(
+  if (j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object()) {
+    const auto & parent_json = j["ParentComponentInfo"];
+    ParentComponentInfo parent_info;
+    parent_info.id = get_safe_string_from_json(
             parent_json, "Id",
             get_safe_string_from_json(parent_json, "ComponentID", ""));
-        parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
-        parent_info.plugin_name = get_safe_string_from_json(parent_json, "PluginName", "");
-        parent_info.slot_name = get_safe_string_from_json(parent_json, "SlotName", "");
-        parent_info.library = get_safe_string_from_json(parent_json, "Library", "");
-        parent_info.is_linked = parent_json.value("IsLinked", false);
-        record.parent_component_info = parent_info;
-    }
+    parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
+    parent_info.plugin_name = get_safe_string_from_json(parent_json, "PluginName", "");
+    parent_info.slot_name = get_safe_string_from_json(parent_json, "SlotName", "");
+    parent_info.library = get_safe_string_from_json(parent_json, "Library", "");
+    parent_info.is_linked = parent_json.value("IsLinked", false);
+    record.parent_component_info = parent_info;
+  }
 
-    if (j.contains("Subcomponents") && j["Subcomponents"].is_object()) {
-        for (auto& [slot_name, sub_info] : j["Subcomponents"].items()) {
-            const auto parse_subcomponent = [](const nlohmann::json& value) {
-                SubcomponentInfo subcomponent;
-                subcomponent.id = get_safe_string_from_json(value, "Id", "");
-                subcomponent.name = get_safe_string_from_json(value, "Name", "");
-                subcomponent.plugin_type =
-                    get_safe_string_from_json(value, "PluginType", "");
-                subcomponent.plugin_name =
-                    get_safe_string_from_json(value, "PluginName", "");
-                subcomponent.library =
-                    get_safe_string_from_json(value, "Library", "");
-                subcomponent.folder =
-                    get_safe_string_from_json(value, "Folder", "");
-                subcomponent.slot_name =
-                    get_safe_string_from_json(value, "SlotName", "");
-                subcomponent.is_linked = value.value("IsLinked", false);
-                return subcomponent;
-            };
+  if (j.contains("Subcomponents") && j["Subcomponents"].is_object()) {
+    for (auto & [slot_name, sub_info] : j["Subcomponents"].items()) {
+      const auto parse_subcomponent = [](const nlohmann::json & value) {
+          SubcomponentInfo subcomponent;
+          subcomponent.id = get_safe_string_from_json(value, "Id", "");
+          subcomponent.name = get_safe_string_from_json(value, "Name", "");
+          subcomponent.plugin_type =
+            get_safe_string_from_json(value, "PluginType", "");
+          subcomponent.plugin_name =
+            get_safe_string_from_json(value, "PluginName", "");
+          subcomponent.library =
+            get_safe_string_from_json(value, "Library", "");
+          subcomponent.folder =
+            get_safe_string_from_json(value, "Folder", "");
+          subcomponent.slot_name =
+            get_safe_string_from_json(value, "SlotName", "");
+          subcomponent.is_linked = value.value("IsLinked", false);
+          return subcomponent;
+        };
 
-            auto& slot_subcomponents = record.subcomponents[slot_name];
-            if (sub_info.is_array()) {
-                for (const auto& item : sub_info) {
-                    slot_subcomponents.push_back(parse_subcomponent(item));
-                }
-            }
-            else if (sub_info.is_object()) {
-                slot_subcomponents.push_back(parse_subcomponent(sub_info));
-            }
+      auto & slot_subcomponents = record.subcomponents[slot_name];
+      if (sub_info.is_array()) {
+        for (const auto & item : sub_info) {
+          slot_subcomponents.push_back(parse_subcomponent(item));
         }
+      } else if (sub_info.is_object()) {
+        slot_subcomponents.push_back(parse_subcomponent(sub_info));
+      }
     }
-    return record;
+  }
+  return record;
 }
 
 LinkedComponentRecord LinkedComponentRecord::from_json(
-    const nlohmann::json& j, const std::string& component_path)
+  const nlohmann::json & j, const std::string & component_path)
 {
-    LinkedComponentRecord record;
-    record.id = get_safe_string_from_json(j, "Id", "");
-    record.name = get_safe_string_from_json(
+  LinkedComponentRecord record;
+  record.id = get_safe_string_from_json(j, "Id", "");
+  record.name = get_safe_string_from_json(
         j, "Name", get_safe_string_from_json(j, "ComponentName", ""));
-    record.folder = component_path;
-    record.linked_component_id = get_safe_string_from_json(j, "LinkedComponentId", "");
-    record.linked_component_workspace = get_safe_string_from_json(j, "LinkedComponentWorkspace", "");
-    if ((j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object())
-        || (j.contains("ParentComponent") && j["ParentComponent"].is_object())) {
-        const auto& parent_json = j.contains("ParentComponentInfo")
-            ? j["ParentComponentInfo"]
-            : j["ParentComponent"];
-        ParentComponentInfo parent_info;
-        parent_info.id = get_safe_string_from_json(parent_json, "Id", "");
-        parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
-        parent_info.plugin_name = get_safe_string_from_json(parent_json, "PluginName", "");
-        parent_info.slot_name = get_safe_string_from_json(parent_json, "SlotName", "");
-        parent_info.library = get_safe_string_from_json(parent_json, "Library", "");
-        parent_info.is_linked = parent_json.value("IsLinked", false);
-        record.parent_component_info = parent_info;
-    }
-    return record;
+  record.folder = component_path;
+  record.linked_component_id = get_safe_string_from_json(j, "LinkedComponentId", "");
+  record.linked_component_workspace = get_safe_string_from_json(j, "LinkedComponentWorkspace", "");
+  if ((j.contains("ParentComponentInfo") && j["ParentComponentInfo"].is_object()) ||
+    (j.contains("ParentComponent") && j["ParentComponent"].is_object()))
+  {
+    const auto & parent_json = j.contains("ParentComponentInfo") ?
+      j["ParentComponentInfo"] :
+      j["ParentComponent"];
+    ParentComponentInfo parent_info;
+    parent_info.id = get_safe_string_from_json(parent_json, "Id", "");
+    parent_info.plugin_type = get_safe_string_from_json(parent_json, "PluginType", "");
+    parent_info.plugin_name = get_safe_string_from_json(parent_json, "PluginName", "");
+    parent_info.slot_name = get_safe_string_from_json(parent_json, "SlotName", "");
+    parent_info.library = get_safe_string_from_json(parent_json, "Library", "");
+    parent_info.is_linked = parent_json.value("IsLinked", false);
+    record.parent_component_info = parent_info;
+  }
+  return record;
 }
 
 ScriptDescription ScriptDescription::from_json(
-    const nlohmann::json& j, const std::string& script_path)
+  const nlohmann::json & j, const std::string & script_path)
 {
-    ScriptDescription description;
-    description.script_path = get_safe_string_from_json(j, "ScriptPath", script_path);
-    description.language = get_safe_string_from_json(j, "Language", "");
-    description.active_configuration = get_safe_string_from_json(
+  ScriptDescription description;
+  description.script_path = get_safe_string_from_json(j, "ScriptPath", script_path);
+  description.language = get_safe_string_from_json(j, "Language", "");
+  description.active_configuration = get_safe_string_from_json(
         j, "ActiveConfiguration", "");
-    if (j.contains("Configurations") && j["Configurations"].is_object()) {
-        for (const auto& [configuration_name, configuration_json] :
-             j["Configurations"].items()) {
-            if (!configuration_json.contains("Components") ||
-                !configuration_json["Components"].is_object()) {
-                continue;
-            }
+  if (j.contains("Configurations") && j["Configurations"].is_object()) {
+    for (const auto & [configuration_name, configuration_json] :
+      j["Configurations"].items())
+    {
+      if (!configuration_json.contains("Components") ||
+        !configuration_json["Components"].is_object())
+      {
+        continue;
+      }
 
-            ScriptDescription::ComponentAssignments assignments;
-            for (const auto& [slot_name, components_json] :
-                 configuration_json["Components"].items()) {
-                if (!components_json.is_array() && !components_json.is_object()) {
-                    continue;
-                }
-                std::vector<ScriptComponent> components;
-                const auto add_component = [&components](const nlohmann::json& component_json) {
-                    components.push_back({
-                        get_safe_string_from_json(component_json, "Id", ""),
-                        get_safe_string_from_json(
+      ScriptDescription::ComponentAssignments assignments;
+      for (const auto & [slot_name, components_json] :
+        configuration_json["Components"].items())
+      {
+        if (!components_json.is_array() && !components_json.is_object()) {
+          continue;
+        }
+        std::vector<ScriptComponent> components;
+        const auto add_component = [&components](const nlohmann::json & component_json) {
+            components.push_back({
+              get_safe_string_from_json(component_json, "Id", ""),
+              get_safe_string_from_json(
                             component_json, "PluginName", ""),
                     });
-                };
-                if (components_json.is_array()) {
-                    for (const auto& component_json : components_json) {
-                        add_component(component_json);
-                    }
-                }
-                else {
-                    add_component(components_json);
-                }
-                assignments[slot_name] = std::move(components);
-            }
-            description.configurations[configuration_name] =
-                std::move(assignments);
+          };
+        if (components_json.is_array()) {
+          for (const auto & component_json : components_json) {
+            add_component(component_json);
+          }
+        } else {
+          add_component(components_json);
         }
+        assignments[slot_name] = std::move(components);
+      }
+      description.configurations[configuration_name] =
+        std::move(assignments);
     }
-    if (j.contains("Spec") && j["Spec"].is_object()) {
-        for (auto& [key, value] : j["Spec"].items()) {
-            description.spec[key] = value.get<std::string>();
-        }
+  }
+  if (j.contains("Spec") && j["Spec"].is_object()) {
+    for (auto & [key, value] : j["Spec"].items()) {
+      description.spec[key] = value.get<std::string>();
     }
-    return description;
+  }
+  return description;
 }
 
 }

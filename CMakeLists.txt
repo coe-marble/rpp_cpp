@@ -101,8 +101,8 @@ install(CODE "
     COMMAND \${CMAKE_COMMAND} -E create_symlink
     \"../lib/${PROJECT_NAME}/component_server_cpp\"
     \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/rpp_component_server_cpp\"
-  )
-  ")
+)
+")
 
 install(TARGETS rpp_cpp rpp_cpp_core
   EXPORT export_rpp_cpp

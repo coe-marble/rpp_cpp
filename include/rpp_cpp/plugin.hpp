@@ -8,7 +8,7 @@
 #include "context.hpp"
 
 #define RPP_COMPONENTS(...) \
-    static inline const std::map<std::string, std::string> COMPONENTS = { __VA_ARGS__ };
+  static inline const std::map<std::string, std::string> COMPONENTS = {__VA_ARGS__};
 
 #define RPP_PARAMETERS(...) \
-    static inline const std::vector<rpp::params::ParameterDescription> PARAMETERS = { __VA_ARGS__ };
+  static inline const std::vector<rpp::params::ParameterDescription> PARAMETERS = {__VA_ARGS__};

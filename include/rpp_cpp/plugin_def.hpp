@@ -27,6 +27,7 @@ public:
   virtual void reset() {}
 
   // Internal dispatch entry points; typed callbacks live on LifecyclePlugin.
+  virtual const std::type_info & handover_state_type() const {return typeid(void);}
   virtual CallbackResult validate_handover_state(const std::any &) const
   {
     return CallbackResult::failure("Plugin does not implement lifecycle activation");
@@ -60,6 +61,7 @@ template<typename State>
 class LifecyclePlugin : public Plugin
 {
 public:
+  const std::type_info & handover_state_type() const final {return typeid(State);}
   virtual CallbackResult on_activate(const std::optional<State> & state) = 0;
   virtual DeactivationResult<State> on_deactivate() = 0;
 

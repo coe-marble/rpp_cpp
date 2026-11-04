@@ -45,6 +45,11 @@ private:
   rpp::RppDataManager & data_manager_;
   ClockOptions clock_options_;
   std::map<std::string, PreparedAdaptedComponent> adapted_components_;
+  struct PreparationScope
+  {
+    std::map<std::string, PreparedAdaptedComponent> & prepared;
+    ~PreparationScope() {prepared.clear();}
+  };
   ExternalComponentProcessRegistry external_component_process_registry_;
 
 public:
@@ -70,6 +75,7 @@ public:
 
   ComponentContext build_component_from_path(const std::string & component_path)
   {
+    PreparationScope ownership{adapted_components_};
     prepare_component_processes({
         make_component_node(component_path, component_path, "")});
     return build_for_component(component_path);
@@ -78,6 +84,7 @@ public:
   std::vector<ComponentContext> build_from_component_roots(
     const std::vector<ComponentRoot> & roots)
   {
+    PreparationScope ownership{adapted_components_};
     std::vector<ComponentNode> root_nodes;
     root_nodes.reserve(roots.size());
     for (const auto & root : roots) {
@@ -120,6 +127,7 @@ public:
     std::optional<std::string> configuration = std::nullopt,
     std::optional<std::string> parts_folder = std::nullopt)
   {
+    PreparationScope ownership{adapted_components_};
     const auto script_description = data_manager_.load_script_description(
                 script_description_path);
     const auto & components = get_script_components(

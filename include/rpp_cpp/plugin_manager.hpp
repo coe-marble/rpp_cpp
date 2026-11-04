@@ -35,7 +35,8 @@ private:
   std::atomic<bool> closing_{false};
 
   std::shared_ptr<Entry> entry(const std::string & name) const;
-  std::optional<CallbackResult> begin(Entry &, const std::string & operation,
+  std::optional<CallbackResult> begin(
+    Entry &, const std::string & operation,
     std::initializer_list<LifecycleState> allowed, bool during_close = false);
   static CallbackResult finish(Entry &, LifecycleState, CallbackResult);
   template<typename Callback>
@@ -65,12 +66,16 @@ public:
   CallbackResult load(const std::string & name, const std::string & component = "");
   CallbackResult configure(const std::string & name);
   CallbackResult activate(const std::string & name, const std::any & state = {});
-  DeactivationResult<std::any> deactivate(const std::string & name, Timeout timeout = Timeout::max());
+  DeactivationResult<std::any> deactivate(
+    const std::string & name,
+    Timeout timeout = Timeout::max());
   CallbackResult cleanup(const std::string & name);
   CallbackResult unload(const std::string & name, Timeout timeout = Timeout::max());
-  CallbackResult switch_plugins(const std::string & source, const std::string & target,
+  CallbackResult switch_plugins(
+    const std::string & source, const std::string & target,
     bool transfer_state = true, Timeout timeout = Timeout::max());
-  CallbackResult reload(const std::string & name, bool transfer_state = false,
+  CallbackResult reload(
+    const std::string & name, bool transfer_state = false,
     Timeout timeout = Timeout::max(), std::function<void(const std::string &)> refresh = {});
   CallbackResult close(Timeout timeout = Timeout::max());
   ComponentInfo get_info(const std::string & name) const;
@@ -78,11 +83,13 @@ public:
   std::vector<ComponentInfo> list() const;
 
   template<typename T, typename Callback>
-  auto with_active(const std::string & name, Callback && callback,
+  auto with_active(
+    const std::string & name, Callback && callback,
     std::optional<uint64_t> generation = {}) -> std::invoke_result_t<Callback, T &>
   {
     using Result = std::invoke_result_t<Callback, T &>;
-    static_assert(!std::is_pointer_v<Result> && !std::is_reference_v<Result>,
+    static_assert(
+      !std::is_pointer_v<Result>&& !std::is_reference_v<Result>,
       "Return owned values, not borrowed plugin pointers/references");
     auto guard = borrow(name, generation);
     auto * plugin = dynamic_cast<T *>(guard.instance.get());

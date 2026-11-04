@@ -57,9 +57,6 @@ jobs:
       - name: Build and test
         run: |
           source /opt/ros/lyrical/setup.bash
-          # The first build generates Cap'n Proto sources that CMake discovers
-          # during the next configuration pass.
-          colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/opt/rpp-test-venv/bin/python || true
           colcon build --base-paths rpp_dev/src/rpp_cpp --symlink-install --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/opt/rpp-test-venv/bin/python
           rpp init-home
           colcon test --packages-select rpp_cpp --event-handlers console_direct+

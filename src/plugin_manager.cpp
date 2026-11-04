@@ -39,7 +39,8 @@ ComponentInfo PluginManager::get_info(const std::string & name) const
   return item->info;
 }
 
-std::optional<CallbackResult> PluginManager::begin(Entry & item, const std::string & operation,
+std::optional<CallbackResult> PluginManager::begin(
+  Entry & item, const std::string & operation,
   std::initializer_list<LifecycleState> allowed, bool during_close)
 {
   std::lock_guard<std::mutex> lock(item.mutex);
@@ -79,8 +80,9 @@ CallbackResult PluginManager::finish(Entry & item, LifecycleState state, Callbac
 template<typename Callback>
 CallbackResult PluginManager::capture(const std::string & operation, Callback callback)
 {
-  try {return callback();}
-  catch (const std::exception & error) {
+  try {
+    return callback();
+  } catch (const std::exception & error) {
     return CallbackResult::failure(operation + " failed: " + error.what());
   } catch (...) {
     return CallbackResult::failure(operation + " failed: unknown exception");
@@ -91,8 +93,9 @@ CallbackResult PluginManager::drain(Entry & item, Timeout timeout)
 {
   std::unique_lock<std::mutex> lock(item.mutex);
   auto empty = [&] {return item.info.in_flight == 0;};
-  if (timeout == Timeout::max()) {item.changed.wait(lock, empty);}
-  else if (!item.changed.wait_for(lock, timeout, empty)) {
+  if (timeout == Timeout::max()) {
+    item.changed.wait(lock, empty);
+  } else if (!item.changed.wait_for(lock, timeout, empty)) {
     return CallbackResult::failure("Timed out draining active calls; instance retained");
   }
   return {};
@@ -119,8 +122,11 @@ CallbackResult PluginManager::load(const std::string & name, const std::string &
     std::lock_guard<std::mutex> lock(item->mutex);
     if (!component.empty()) {item->info.component = component;}
   }
-  auto result = capture("load", [&] {
-      if (item->info.component.empty()) {return CallbackResult::failure("A component path is required");}
+  auto result = capture(
+    "load", [&] {
+      if (item->info.component.empty()) {
+        return CallbackResult::failure("A component path is required");
+      }
       std::lock_guard<std::recursive_mutex> lock(build_mutex_);
       item->context = std::make_unique<ComponentContext>(factory_(item->info.component));
       {
@@ -131,7 +137,9 @@ CallbackResult PluginManager::load(const std::string & name, const std::string &
       item->may_be_active = false;
       return CallbackResult{};
     });
-  return finish(*item, result.success ? LifecycleState::UNCONFIGURED : LifecycleState::ERROR, result);
+  return finish(
+    *item, result.success ? LifecycleState::UNCONFIGURED : LifecycleState::ERROR,
+    result);
 }
 
 CallbackResult PluginManager::configure(const std::string & name)
@@ -149,7 +157,9 @@ CallbackResult PluginManager::activate(const std::string & name, const std::any 
 {
   auto item = entry(name);
   std::lock_guard<std::recursive_mutex> operation(item->operation);
-  if (item->info.state == LifecycleState::ACTIVE && !item->info.transition && !closing_) {return {};}
+  if (item->info.state == LifecycleState::ACTIVE && !item->info.transition && !closing_) {
+    return {};
+  }
   auto rejected = begin(*item, "activate", {LifecycleState::INACTIVE});
   if (rejected) {return *rejected;}
   item->may_be_active = true;
@@ -161,8 +171,7 @@ DeactivationResult<std::any> PluginManager::stop(Entry & item)
 {
   try {
     auto result = item.context->deactivate();
-    if (result.result.success) {item.may_be_active = false;}
-    else {result.state.reset();}
+    if (result.result.success) {item.may_be_active = false;} else {result.state.reset();}
     return result;
   } catch (const std::exception & error) {
     return {CallbackResult::failure(std::string("deactivate failed: ") + error.what()), {}};
@@ -177,13 +186,16 @@ DeactivationResult<std::any> PluginManager::deactivate(const std::string & name,
   std::lock_guard<std::recursive_mutex> operation(item->operation);
   if (item->info.state == LifecycleState::INACTIVE && !item->info.transition) {return {};}
   if (item->info.state == LifecycleState::ERROR && !item->may_be_active) {
-    return {CallbackResult::failure("Failed configuration requires cleanup before reconfiguration"), {}};
+    return {CallbackResult::failure("Failed configuration requires cleanup before reconfiguration"),
+      {}};
   }
   auto rejected = begin(*item, "deactivate", {LifecycleState::ACTIVE, LifecycleState::ERROR});
   if (rejected) {return {*rejected, {}};}
   auto drained = drain(*item, timeout);
   auto result = drained.success ? stop(*item) : DeactivationResult<std::any>{drained, {}};
-  finish(*item, result.result.success ? LifecycleState::INACTIVE : LifecycleState::ERROR, result.result);
+  finish(
+    *item, result.result.success ? LifecycleState::INACTIVE : LifecycleState::ERROR,
+    result.result);
   return result;
 }
 
@@ -191,21 +203,27 @@ CallbackResult PluginManager::cleanup(const std::string & name)
 {
   auto item = entry(name);
   std::lock_guard<std::recursive_mutex> operation(item->operation);
-  if (item->may_be_active) {return CallbackResult::failure("Deactivate the component before cleanup");}
+  if (item->may_be_active) {
+    return CallbackResult::failure("Deactivate the component before cleanup");
+  }
   auto rejected = begin(*item, "cleanup", {LifecycleState::INACTIVE, LifecycleState::ERROR});
   if (rejected) {return *rejected;}
-  auto result = capture("cleanup", [&] {
+  auto result = capture(
+    "cleanup", [&] {
       return item->context ? item->context->cleanup() : CallbackResult{};
     });
   if (result.success) {item->configured = false;}
-  return finish(*item, result.success ? LifecycleState::UNCONFIGURED : LifecycleState::ERROR, result);
+  return finish(
+    *item, result.success ? LifecycleState::UNCONFIGURED : LifecycleState::ERROR,
+    result);
 }
 
 CallbackResult PluginManager::unload(const std::string & name, Timeout timeout)
 {
   auto item = entry(name);
   std::lock_guard<std::recursive_mutex> operation(item->operation);
-  auto rejected = begin(*item, "unload", {LifecycleState::UNLOADED, LifecycleState::UNCONFIGURED,
+  auto rejected = begin(
+    *item, "unload", {LifecycleState::UNLOADED, LifecycleState::UNCONFIGURED,
       LifecycleState::INACTIVE, LifecycleState::ACTIVE, LifecycleState::ERROR}, true);
   if (rejected) {return *rejected;}
   auto result = drain(*item, timeout);
@@ -223,7 +241,8 @@ CallbackResult PluginManager::unload(const std::string & name, Timeout timeout)
   return finish(*item, result.success ? LifecycleState::UNLOADED : LifecycleState::ERROR, result);
 }
 
-CallbackResult PluginManager::switch_plugins(const std::string & source, const std::string & target,
+CallbackResult PluginManager::switch_plugins(
+  const std::string & source, const std::string & target,
   bool transfer_state, Timeout timeout)
 {
   if (source == target) {return CallbackResult::failure("Switch source and target must differ");}
@@ -235,7 +254,9 @@ CallbackResult PluginManager::switch_plugins(const std::string & source, const s
       return CallbackResult::failure("Cannot switch from inside a guarded call");
     }
   }
-  if (old->info.state != LifecycleState::ACTIVE) {return CallbackResult::failure("Switch source must be active");}
+  if (old->info.state != LifecycleState::ACTIVE) {
+    return CallbackResult::failure("Switch source must be active");
+  }
   if (next->info.state == LifecycleState::UNLOADED) {
     auto result = load(target, "");
     if (!result.success) {return result;}
@@ -244,7 +265,9 @@ CallbackResult PluginManager::switch_plugins(const std::string & source, const s
     auto result = configure(target);
     if (!result.success) {return result;}
   }
-  if (next->info.state != LifecycleState::INACTIVE) {return CallbackResult::failure("Switch target must be inactive");}
+  if (next->info.state != LifecycleState::INACTIVE) {
+    return CallbackResult::failure("Switch target must be inactive");
+  }
   if (transfer_state) {
     auto first = old->context->get_instance<Plugin>();
     auto second = next->context->get_instance<Plugin>();
@@ -257,7 +280,8 @@ CallbackResult PluginManager::switch_plugins(const std::string & source, const s
   return activate(target, transfer_state && stopped.state ? *stopped.state : std::any{});
 }
 
-CallbackResult PluginManager::reload(const std::string & name, bool transfer_state, Timeout timeout,
+CallbackResult PluginManager::reload(
+  const std::string & name, bool transfer_state, Timeout timeout,
   std::function<void(const std::string &)> refresh)
 {
   auto item = entry(name);
@@ -333,14 +357,18 @@ PluginManager::~PluginManager()
   }
 }
 
-PluginManager::ActiveCall PluginManager::borrow(const std::string & name, std::optional<uint64_t> generation)
+PluginManager::ActiveCall PluginManager::borrow(
+  const std::string & name,
+  std::optional<uint64_t> generation)
 {
   auto item = entry(name);
   const auto thread = std::this_thread::get_id();
   std::shared_ptr<Plugin> instance;
   {
     std::lock_guard<std::mutex> lock(item->mutex);
-    if (generation && *generation != item->info.generation) {throw LifecycleError("Stale component generation");}
+    if (generation && *generation != item->info.generation) {
+      throw LifecycleError("Stale component generation");
+    }
     if (!item->info.callable || item->info.state != LifecycleState::ACTIVE) {
       throw LifecycleError("Component is not available for active calls");
     }
@@ -348,7 +376,8 @@ PluginManager::ActiveCall PluginManager::borrow(const std::string & name, std::o
     ++item->info.in_flight;
     ++item->callers[thread];
   }
-  return ActiveCall(std::move(instance), [item, thread] {
+  return ActiveCall(
+    std::move(instance), [item, thread] {
       std::lock_guard<std::mutex> lock(item->mutex);
       --item->info.in_flight;
       if (--item->callers[thread] == 0) {item->callers.erase(thread);}
@@ -366,7 +395,9 @@ std::vector<ComponentInfo> PluginManager::list() const
   std::vector<std::string> names;
   {std::lock_guard<std::mutex> lock(mutex_); names = order_;}
   std::vector<ComponentInfo> result;
-  for (const auto & name : names) {result.push_back(get_info(name));}
+  for (const auto & name : names) {
+    result.push_back(get_info(name));
+  }
   return result;
 }
 }  // namespace rpp

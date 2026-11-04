@@ -166,8 +166,30 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
     list(APPEND RPP_ARGS --override)
   endif()
 
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c
+      "from pathlib import Path; import rpp_common; print(Path(next(iter(rpp_common.__path__))) / 'common_plugin_types')"
+    OUTPUT_VARIABLE COMMON_PLUGIN_TYPES_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE COMMON_PLUGIN_TYPES_STATUS
+  )
+  if(NOT COMMON_PLUGIN_TYPES_STATUS EQUAL 0 OR NOT IS_DIRECTORY "${COMMON_PLUGIN_TYPES_DIR}")
+    message(FATAL_ERROR "Could not find the rpp_common plugin-type schemas.")
+  endif()
+
+  # Discover inputs at configuration time; their generated outputs do not exist
+  # until run_rpp_autogen finishes during the build.
+  file(GLOB TEST_SCHEMAS CONFIGURE_DEPENDS "${COMMON_PLUGIN_TYPES_DIR}/*/*.capnp")
+  set(GENERATED_SOURCES)
+  foreach(SCHEMA IN LISTS TEST_SCHEMAS)
+    file(RELATIVE_PATH SCHEMA_PATH "${COMMON_PLUGIN_TYPES_DIR}" "${SCHEMA}")
+    list(APPEND GENERATED_SOURCES "${INCLUDE_GENERATED_DIR}/capnp_gen/${SCHEMA_PATH}.c++")
+  endforeach()
+  set_source_files_properties(${GENERATED_SOURCES} PROPERTIES GENERATED TRUE)
+
   add_custom_command(
     OUTPUT "${GENERATED_DIR}/gen_checked.stamp"
+    BYPRODUCTS ${GENERATED_SOURCES}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND rpp ${RPP_ARGS}
     COMMAND ${CMAKE_COMMAND} -E touch "${GENERATED_DIR}/gen_checked.stamp"
@@ -192,12 +214,7 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   ament_add_gtest(test_instance_plugin_cpp tests/test_instance_plugin_cpp.cpp)
   add_dependencies(test_instance_plugin_cpp run_rpp_autogen)
 
-  file(GLOB_RECURSE GENERATED_SOURCES CONFIGURE_DEPENDS "${INCLUDE_GENERATED_DIR}/capnp_gen/**/*.c++")
-  if(GENERATED_SOURCES)
-    target_sources(test_instance_plugin_cpp PRIVATE
-      ${GENERATED_SOURCES}
-    )
-  endif()
+  target_sources(test_instance_plugin_cpp PRIVATE ${GENERATED_SOURCES})
 
   target_include_directories(test_instance_plugin_cpp PRIVATE include ${INCLUDE_GENERATED_DIR})
   target_compile_definitions(test_instance_plugin_cpp PRIVATE

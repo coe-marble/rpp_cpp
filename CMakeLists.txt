@@ -51,6 +51,8 @@ endif()
 
 
 add_library(rpp_cpp SHARED
+  src/context.cpp
+  src/plugin_manager.cpp
   src/plugin_runtime.capnp.c++
   src/data_model.cpp
   src/parameter_handler.cpp
@@ -215,6 +217,10 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   ament_add_gtest(test_context_lifecycle tests/test_context_lifecycle.cpp)
   target_include_directories(test_context_lifecycle PRIVATE include)
   target_link_libraries(test_context_lifecycle rpp_cpp_core)
+
+  ament_add_gtest(test_plugin_manager tests/test_plugin_manager.cpp)
+  target_include_directories(test_plugin_manager PRIVATE include)
+  target_link_libraries(test_plugin_manager rpp_cpp)
 
   add_dependencies(test_rpp_cpp rpp_cpp)
   target_include_directories(test_rpp_cpp PRIVATE include

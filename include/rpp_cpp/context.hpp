@@ -31,6 +31,9 @@ private:
   PluginPtrShared instance_;
   std::shared_ptr<rpp::RppLogger> logger_;
   std::shared_ptr<rpp::RppClock> clock_;
+  mutable bool activation_outstanding_ = false;
+
+  CallbackResult close_runtime();
 
   ComponentContext(
     PluginPtr && instance,
@@ -103,6 +106,22 @@ public:
     return clock_;
   }
 
+  CallbackResult close()
+  {
+    CallbackResult first_error;
+    instance_.reset();
+    for (auto slot = subcomponents_.rbegin(); slot != subcomponents_.rend(); ++slot) {
+      for (auto child = slot->second.rbegin(); child != slot->second.rend(); ++child) {
+        auto result = child->close();
+        if (!result.success && first_error.success) {first_error = result;}
+      }
+    }
+    auto released = close_runtime();
+    if (!released.success && first_error.success) {first_error = released;}
+    if (first_error.success) {subcomponents_.clear();}
+    return first_error;
+  }
+
 
   CallbackResult configure() const
   {
@@ -168,6 +187,7 @@ public:
       if (!result.success) {break;}
     }
     if (result.success && instance_) {
+      activation_outstanding_ = true;
       result = instance_->activate_state(state);
     }
     if (!result.success) {
@@ -188,8 +208,9 @@ public:
     if (external_component_process_) {
       result.result =
         CallbackResult::failure("Adapted lifecycle deactivation is not supported yet");
-    } else if (instance_) {
+    } else if (instance_ && activation_outstanding_) {
       result = instance_->deactivate_state();
+      if (result.result.success) {activation_outstanding_ = false;}
     }
     for (auto slot = subcomponents_.rbegin(); slot != subcomponents_.rend(); ++slot) {
       for (auto child = slot->second.rbegin(); child != slot->second.rend(); ++child) {

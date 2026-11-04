@@ -213,6 +213,8 @@ TEST(ContextLifecycle, DeactivationContinuesAndPreservesFirstFailure)
     events)));
   children.push_back(rpp::ComponentContextAccess::make(second));
   auto context = rpp::ComponentContextAccess::make(parent, std::move(children));
+  ASSERT_TRUE(context.activate().success);
+  events.clear();
   auto result = context.deactivate();
   EXPECT_FALSE(result.result.success);
   EXPECT_EQ(result.result.message, "deactivation rejected parent");

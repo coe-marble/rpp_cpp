@@ -175,6 +175,12 @@ public:
 
   ~ExternalComponentProcess()
   {
+    close();
+  }
+
+  CallbackResult close()
+  {
+    CallbackResult result;
     if (executor_started_) {
       try {
         executor_.call([this](kj::AsyncIoContext &) {
@@ -185,15 +191,30 @@ public:
             }
             runtime_client_context_.reset();
                 });
+      } catch (const std::exception & error) {
+        result = CallbackResult::failure(error.what());
       } catch (...) {
+        result = CallbackResult::failure("Unknown runtime disconnection failure");
       }
       executor_.stop();
       executor_started_ = false;
     }
     try {
-      process_.wait(std::chrono::seconds(1));
-    } catch (...) {
+      process_.wait(std::chrono::seconds(2));
+    } catch (const std::exception &) {
+      try {
+        process_.terminate();
+        try {
+          process_.wait(std::chrono::seconds(2));
+        } catch (const std::exception &) {
+          process_.kill();
+          process_.wait(std::chrono::seconds(2));
+        }
+      } catch (const std::exception & error) {
+        if (result.success) {result = CallbackResult::failure(error.what());}
+      }
     }
+    return result;
   }
 
   ExternalComponentProcess(const ExternalComponentProcess &) = delete;

@@ -123,27 +123,45 @@ int main(int argc, char **argv)
   std::cout << "Building component contexts from roots." << std::endl;
 
   auto contexts = context_builder.build_from_component_roots(roots);
-  RPP_LOG_DEBUG(*logger, "Contexts built.");
-  for (size_t i = 0; i < contexts.size(); ++i) {
-    const auto & conn = conns[i];
-    auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
-    assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
+  auto cleanup_contexts = [&]() {
+      rpp::CallbackResult first_error;
+      for (auto context = contexts.rbegin(); context != contexts.rend(); ++context) {
+        auto result = context->cleanup();
+        if (!result.success) {
+          RPP_LOG_ERROR(*logger, "Component cleanup failed: %s", result.message.c_str());
+          if (first_error.success) {first_error = result;}
+        }
+      }
+      return first_error;
+    };
+  try {
+    RPP_LOG_DEBUG(*logger, "Contexts built.");
+    for (size_t i = 0; i < contexts.size(); ++i) {
+      const auto & conn = conns[i];
+      auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
+      assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
 
-    std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
-    auto & context = contexts[i];
-    context.initialize();
-    RPP_LOG_DEBUG(*logger, "Context initialized plugin=%s connection=%s.",
+      std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
+      auto & context = contexts[i];
+      context.configure().require_success("on_configure");
+      RPP_LOG_DEBUG(*logger, "Context configured plugin=%s connection=%s.",
                      plugin_names[i].c_str(), conn.c_str());
-    auto server_adapter = rpp::load_plugin_adapter_server(
+      auto server_adapter = rpp::load_plugin_adapter_server(
             plugin_info, context.get_instance<rpp::Plugin>(),
             conn + "_server", conn, "create_plugin_server", logger);
-    std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
+      std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
 
-    server_host.add_server(std::move(server_adapter));
-    RPP_LOG_DEBUG(*logger, "Adapter registered plugin=%s connection=%s.",
+      server_host.add_server(std::move(server_adapter));
+      RPP_LOG_DEBUG(*logger, "Adapter registered plugin=%s connection=%s.",
                      plugin_names[i].c_str(), conn.c_str());
+    }
+    RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
+    server_host.run();
+  } catch (...) {
+    cleanup_contexts();
+    active_server_host = nullptr;
+    throw;
   }
-  RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
-  server_host.run();
   active_server_host = nullptr;
+  cleanup_contexts().require_success("on_cleanup");
 }

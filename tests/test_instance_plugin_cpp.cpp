@@ -367,7 +367,7 @@ TEST_F(NativePluginTest, TestSimpleInstancePlugin) {
         rpp::LoggerOptions{rpp::LogLevel::DEBUG, "test_simple_instance_plugin"});
     auto context = rpp::ComponentContextAccess::with_logger_and_parameters(
         logger, {{"validate_threshold", 5.0}});
-    plugin->initialize(context);
+    plugin->configure(context).require_success("on_configure");
 
     auto parameter_desc = rpp::load_cpp_plugin_parameters_description(plugin_info);
 
@@ -880,7 +880,7 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
         *NativePluginTest::data_manager)
     .build_component_from_path(component_folder);
 
-    context.initialize();
+    context.configure().require_success("on_configure");
 
     auto python_subcomponent =
     context.get_component<rpp_testing::MotionController2D>("ctl_1");

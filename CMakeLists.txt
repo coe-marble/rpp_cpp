@@ -206,6 +206,16 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
 
   ament_add_gtest(test_rpp_cpp tests/test_parameters.cpp)
 
+  ament_add_gtest(test_callback_result tests/test_callback_result.cpp)
+  target_include_directories(test_callback_result PRIVATE include)
+
+  ament_add_gtest(test_lifecycle tests/test_lifecycle.cpp)
+  target_include_directories(test_lifecycle PRIVATE include)
+
+  ament_add_gtest(test_context_lifecycle tests/test_context_lifecycle.cpp)
+  target_include_directories(test_context_lifecycle PRIVATE include)
+  target_link_libraries(test_context_lifecycle rpp_cpp_core)
+
   add_dependencies(test_rpp_cpp rpp_cpp)
   target_include_directories(test_rpp_cpp PRIVATE include
     ${Python3_INCLUDE_DIRS}

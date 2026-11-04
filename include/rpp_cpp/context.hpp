@@ -104,17 +104,108 @@ public:
   }
 
 
-  void initialize() const
+  CallbackResult configure() const
   {
     for (const auto & [name, subcomponents] : subcomponents_) {
       (void)name;
       for (const auto & subcomponent : subcomponents) {
-        subcomponent.initialize();
+        auto result = subcomponent.configure();
+        if (!result.success) {return result;}
       }
     }
-    if (instance_) {
-      instance_->initialize(*this);
+    if (instance_ && !external_component_process_) {
+      return instance_->configure(*this);
     }
+    return {};
+  }
+
+  CallbackResult cleanup() const
+  {
+    CallbackResult first_error;
+    auto record_error = [&](const CallbackResult & result) {
+        if (!result.success) {
+          if (first_error.success) {
+            first_error = result;
+          } else {
+            RPP_LOG_ERROR(*logger_, "Additional component cleanup failure: %s",
+              result.message.c_str());
+          }
+        }
+      };
+    if (instance_ && !external_component_process_) {
+      record_error(instance_->cleanup());
+    }
+    for (auto slot = subcomponents_.rbegin(); slot != subcomponents_.rend(); ++slot) {
+      for (auto child = slot->second.rbegin(); child != slot->second.rend(); ++child) {
+        record_error(child->cleanup());
+      }
+    }
+    return first_error;
+  }
+
+  // Transition validation and call gates belong to the manager. Handover state
+  // applies to this root only; children are activated without a snapshot.
+  CallbackResult activate(const std::any & state = {}) const
+  {
+    if (external_component_process_) {
+      return CallbackResult::failure("Adapted lifecycle activation is not supported yet");
+    }
+    if (instance_) {
+      auto validation = instance_->validate_handover_state(state);
+      if (!validation.success) {return validation;}
+    } else if (state.has_value()) {
+      return CallbackResult::failure("A context without a plugin accepts no state");
+    }
+    std::vector<const ComponentContext *> activated;
+    CallbackResult result;
+    for (const auto & [name, children] : subcomponents_) {
+      (void)name;
+      for (const auto & child : children) {
+        result = child.activate();
+        if (!result.success) {break;}
+        activated.push_back(&child);
+      }
+      if (!result.success) {break;}
+    }
+    if (result.success && instance_) {
+      result = instance_->activate_state(state);
+    }
+    if (!result.success) {
+      for (auto child = activated.rbegin(); child != activated.rend(); ++child) {
+        auto rollback = (*child)->deactivate();
+        if (!rollback.result.success) {
+          RPP_LOG_ERROR(*logger_, "Component activation rollback failed: %s",
+            rollback.result.message.c_str());
+        }
+      }
+    }
+    return result;
+  }
+
+  DeactivationResult<std::any> deactivate() const
+  {
+    DeactivationResult<std::any> result;
+    if (external_component_process_) {
+      result.result =
+        CallbackResult::failure("Adapted lifecycle deactivation is not supported yet");
+    } else if (instance_) {
+      result = instance_->deactivate_state();
+    }
+    for (auto slot = subcomponents_.rbegin(); slot != subcomponents_.rend(); ++slot) {
+      for (auto child = slot->second.rbegin(); child != slot->second.rend(); ++child) {
+        auto stopped = child->deactivate();
+        if (!stopped.result.success) {
+          if (result.result.success) {
+            result.result = stopped.result;
+          } else {
+            RPP_LOG_ERROR(*logger_, "Additional component deactivation failure: %s",
+              stopped.result.message.c_str());
+          }
+        }
+      }
+    }
+    if (!result.result.success) {result.state.reset();}
+    return result;
   }
 
   template<typename T>

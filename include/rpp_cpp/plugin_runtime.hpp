@@ -4,11 +4,14 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <utility>
 #include <capnp/ez-rpc.h>
 #include "plugin_runtime.capnp.h"
 #include "adapter_bases.hpp"
 #include "logger.hpp"
+#include "lifecycle.hpp"
 
 namespace rpp
 {
@@ -21,6 +24,20 @@ class PluginRuntimeServer final : public runtime::PluginRuntime::Server
   std::shared_ptr<ServerAdapterMap> adapters_;
   std::function<void()> on_shutdown_callback_;
   std::shared_ptr<RppLogger> logger_;
+  struct ComponentControl
+  {
+    std::function<CallbackResult()> configure;
+    std::function<CallbackResult()> cleanup;
+    std::optional<CallbackResult> configure_result;
+  };
+  std::map<std::string, ComponentControl> components_;
+
+  static CallbackResult invoke(const std::function<CallbackResult()> & callback)
+  {
+    try {return callback();} catch (const std::exception & error) {
+      return CallbackResult::failure(error.what());
+    } catch (...) {return CallbackResult::failure("Unknown lifecycle callback exception");}
+  }
 
 public:
   explicit PluginRuntimeServer(std::shared_ptr<RppLogger> logger = nullptr)
@@ -36,6 +53,71 @@ public:
   void set_on_shutdown_callback(std::function<void()> callback)
   {
     on_shutdown_callback_ = std::move(callback);
+  }
+
+  void register_component(
+    const std::string & name,
+    std::function<CallbackResult()> configure, std::function<CallbackResult()> cleanup)
+  {
+    if (!components_.emplace(
+        name, ComponentControl{
+        std::move(configure), std::move(cleanup), std::nullopt}).second)
+    {
+      throw std::invalid_argument("Duplicate hosted component: " + name);
+    }
+  }
+
+  CallbackResult configure_component(const std::string & name)
+  {
+    auto found = components_.find(name);
+    if (found == components_.end()) {
+      return CallbackResult::failure("Unknown hosted component: " + name);
+    }
+    auto & component = found->second;
+    if (component.configure_result) {return *component.configure_result;}
+    component.configure_result = CallbackResult::failure("Configuration is in progress");
+    component.configure_result = invoke(component.configure);
+    return *component.configure_result;
+  }
+
+  CallbackResult cleanup_component(const std::string & name)
+  {
+    auto found = components_.find(name);
+    if (found == components_.end()) {
+      return CallbackResult::failure("Unknown hosted component: " + name);
+    }
+    auto & component = found->second;
+    if (!component.configure_result) {return {};}
+    auto result = invoke(component.cleanup);
+    if (result.success) {component.configure_result.reset();} else {
+      component.configure_result = CallbackResult::failure(
+        "Cleanup must succeed before configuration");
+    }
+    return result;
+  }
+
+  ::kj::Promise<void> getProtocolVersion(GetProtocolVersionContext context) override
+  {
+    context.getResults().setVersion(runtime::PROTOCOL_VERSION);
+    return ::kj::READY_NOW;
+  }
+
+  ::kj::Promise<void> configureComponent(ConfigureComponentContext context) override
+  {
+    auto result = configure_component(context.getParams().getName().cStr());
+    auto output = context.getResults().initResult();
+    output.setSuccess(result.success);
+    output.setMessage(result.message);
+    return ::kj::READY_NOW;
+  }
+
+  ::kj::Promise<void> cleanupComponent(CleanupComponentContext context) override
+  {
+    auto result = cleanup_component(context.getParams().getName().cStr());
+    auto output = context.getResults().initResult();
+    output.setSuccess(result.success);
+    output.setMessage(result.message);
+    return ::kj::READY_NOW;
   }
 
 
@@ -74,9 +156,10 @@ public:
   ::kj::Promise<void> getComponentCapability(GetComponentCapabilityContext context) override
   {
     std::string connection_name = context.getParams().getName();
-    RPP_LOG_DEBUG(*logger_,
-                      "Runtime server received getComponentCapability connection=%s.",
-                      connection_name.c_str());
+    RPP_LOG_DEBUG(
+      *logger_,
+      "Runtime server received getComponentCapability connection=%s.",
+      connection_name.c_str());
     if (adapters_->find(connection_name) != adapters_->end()) {
       auto adapter = (*adapters_)[connection_name];
       auto capability = adapter->create_capability_adapter_server__();
@@ -105,6 +188,10 @@ public:
     logger_(logger ? std::move(logger) :
       std::make_shared<RppLogger>("rpp_plugin_runtime_client"))
   {
+    auto version = backend_.getProtocolVersionRequest().send().wait(io_context_.waitScope);
+    if (version.getVersion() != runtime::PROTOCOL_VERSION) {
+      throw LifecycleError("Incompatible component runtime protocol version");
+    }
     RPP_LOG_DEBUG(*logger_, "Runtime client connected.");
   }
 
@@ -112,6 +199,24 @@ public:
   {
     RPP_LOG_DEBUG(*logger_, "Runtime client calling ping.");
     backend_.pingRequest().send().wait(io_context_.waitScope);
+  }
+
+  CallbackResult configure_component(const std::string & name)
+  {
+    auto request = backend_.configureComponentRequest();
+    request.setName(name);
+    auto response = request.send().wait(io_context_.waitScope);
+    auto result = response.getResult();
+    return {result.getSuccess(), result.getMessage().cStr()};
+  }
+
+  CallbackResult cleanup_component(const std::string & name)
+  {
+    auto request = backend_.cleanupComponentRequest();
+    request.setName(name);
+    auto response = request.send().wait(io_context_.waitScope);
+    auto result = response.getResult();
+    return {result.getSuccess(), result.getMessage().cStr()};
   }
 
   void shutdown()

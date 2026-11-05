@@ -15,6 +15,7 @@ namespace rpp
 {
 
 
+/// Resolves workspace/registry data on demand; it does not instantiate plugins.
 class RppDataManager {
 
   std::string rpp_home_dir;

@@ -807,10 +807,26 @@ RPP_PARAM_STRUCT(TestStruct2,
 TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
 {
     std::string component_folder = NativePluginTest::test_data_dir + "/test_component_cpp";
+    bool validated = false;
+    rpp::ComponentContextBuilder::RegistrationValidators validators{
+    {"rpp_testing::MotionController2D",
+      {{"subcomponent1", [&validated](const rpp::ComponentContext & candidate, const auto & registered) {
+          validated = true;
+          return rpp::CallbackResult{registered.empty() &&
+            candidate.get_parameter<float>("float_var") == 6.0f,
+            "Unexpected initial candidate"};
+        }}}}
+    };
 
     auto context = rpp::ComponentContextBuilder(
-        *NativePluginTest::data_manager)
+        *NativePluginTest::data_manager,
+        [](const std::string & name, const rpp::ComponentSlot & type) {
+          return name == "ctl1" && type.plugin_type == "rpp_testing::MotionController2D";
+        }, rpp::ClockOptions{}, std::move(validators))
     .build_component_from_path(component_folder);
+    ASSERT_TRUE(validated);
+    ASSERT_FALSE(context.allows_dynamic_components());
+    ASSERT_TRUE(context.allows_dynamic_components("ctl1"));
 
     auto subcomponent_list = context.list_subcomponents();
     ASSERT_EQ(subcomponent_list.size(), 1);
@@ -849,6 +865,7 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
     ASSERT_EQ(struct2.values[4], 5);
 
     const auto & subcomponent_context = context.get_subcomponent_context("ctl1");
+    ASSERT_TRUE(subcomponent_context.allows_dynamic_components());
     ASSERT_EQ(subcomponent_context.list_subcomponents().size(), 0);
     // TEST PARAMETERS OF SUBCOMPONENT DEFAULT
     ASSERT_EQ(subcomponent_context.get_parameter<float>("float_var"), 6.0f);

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 #include "logger.hpp"
+#include "context.hpp"
 #include "plugin_runtime.hpp"
 #include "capnp_server.hpp"
 
@@ -14,7 +15,8 @@
 namespace rpp
 {
 
-class RppServerHost final {
+class RppServerHost final
+{
 
 private:
   std::string host_;
@@ -40,26 +42,44 @@ public:
   {
   }
 
-  void add_server(std::shared_ptr<ServerAdapter> adapter)
+  void add_server(
+    std::shared_ptr<ServerAdapter> adapter,
+    const ComponentContext * context = nullptr)
   {
     std::string name = adapter->get_info_adapter_server__().connection_name;
+    if (adapters_.count(name)) {
+      throw std::invalid_argument("Duplicate runtime connection name: " + name);
+    }
+    if (context) {
+      // The caller retains the context for the lifetime of this host.
+      runtime_server_impl_->register_component(
+        name,
+        [context]() {return context->configure();}, [context]() {return context->cleanup();});
+    }
     adapters_[name] = adapter;
-    RPP_LOG_DEBUG(*logger_, "Registered runtime adapter connection=%s.",
-                          name.c_str());
+    RPP_LOG_DEBUG(
+      *logger_, "Registered runtime adapter connection=%s.",
+      name.c_str());
   }
 
   kj::AsyncIoContext & get_io_context() {return io_;}
+  CallbackResult cleanup_component(const std::string & name)
+  {
+    return runtime_server_impl_->cleanup_component(name);
+  }
   const kj::AsyncIoContext & get_io_context() const {return io_;}
 
   void run()
   {
-    RPP_LOG_INFO(*logger_, "Starting runtime host host=%s port=%d adapters=%zu.",
-                         host_.c_str(), port_, adapters_.size());
+    RPP_LOG_INFO(
+      *logger_, "Starting runtime host host=%s port=%d adapters=%zu.",
+      host_.c_str(), port_, adapters_.size());
     shutdown_requested_.store(false);
     runtime_server_impl_->set_adapters(adapters_);
-    runtime_server_impl_->set_on_shutdown_callback([this]() {
+    runtime_server_impl_->set_on_shutdown_callback(
+      [this]() {
         this->shutdown();
-            });
+      });
 
     kj::Own<runtime::PluginRuntime::Server> owned_server(
       static_cast<runtime::PluginRuntime::Server *>(runtime_server_impl_.get()),
@@ -68,10 +88,11 @@ public:
 
     auto runtime_server_cap = capnp::Capability::Client(std::move(owned_server));
     runtime_server_ = std::make_unique<runtime::CapnpServer>(
-                io_, host_, port_, runtime_server_cap, adapters_
+      io_, host_, port_, runtime_server_cap, adapters_
     );
-    RPP_LOG_INFO(*logger_, "Runtime host listening host=%s port=%d.",
-                         host_.c_str(), port_);
+    RPP_LOG_INFO(
+      *logger_, "Runtime host listening host=%s port=%d.",
+      host_.c_str(), port_);
 
     kj::Timer & timer = io_.provider->getTimer();
     std::function<kj::Promise<void>()> checkShutdown;
@@ -86,8 +107,9 @@ public:
     RPP_LOG_INFO(*logger_, "Stopping runtime host.");
 
     for (auto & [name, adapter] : adapters_) {
-      RPP_LOG_DEBUG(*logger_, "Stopping runtime adapter connection=%s.",
-                              name.c_str());
+      RPP_LOG_DEBUG(
+        *logger_, "Stopping runtime adapter connection=%s.",
+        name.c_str());
       adapter->close_adapter_server__();
     }
 

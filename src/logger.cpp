@@ -65,7 +65,7 @@ RppLogger::RppLogger(const std::string & name)
 RppLogger::~RppLogger() = default;
 
     // Core log execution logic containing the underlying backends mapping
-void RppLogger::log(LogLevel level, const char * file, int line, std::string_view msg)
+void RppLogger::log(LogLevel level, const char * file, int line, std::string_view msg) const
 {
   if (static_cast<int>(level) < static_cast<int>(options_.level)) {
     return;

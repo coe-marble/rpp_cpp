@@ -7,7 +7,18 @@
 TEST(CallbackResult, RequireSuccessAcceptsSuccessfulResult)
 {
   const rpp::CallbackResult result;
-  EXPECT_NO_THROW(result.require_success("on_activate"));
+  EXPECT_NO_THROW(result.require_success());
+}
+
+TEST(CallbackResult, RequireSuccessUsesFailureMessageWithoutLabel)
+{
+  try {
+    rpp::CallbackResult::failure("state rejected").require_success();
+    FAIL() << "Expected a failed callback to raise";
+  } catch (const rpp::LifecycleError & error) {
+    EXPECT_EQ(std::string(error.what()), "state rejected");
+  }
+  EXPECT_THROW(rpp::CallbackResult::failure("").require_success(), rpp::LifecycleError);
 }
 
 TEST(CallbackResult, RequireSuccessReportsOperationAndReason)

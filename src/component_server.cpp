@@ -21,7 +21,7 @@ void handle_interrupt(int)
 }
 }  // namespace
 
-int main(int argc, char **argv)
+int main(int argc, char ** argv)
 {
   rpp::LoggerOptions logger_options;
   logger_options.level = rpp::LogLevel::DEBUG;
@@ -29,15 +29,16 @@ int main(int argc, char **argv)
   auto logger = std::make_shared<rpp::RppLogger>(logger_options);
   RPP_LOG_DEBUG(*logger, "Starting component server (argc=%d).", argc);
 
-    // parse command line arguments,
+  // parse command line arguments,
   std::string home_dir = "";
   std::string host = "localhost";
   uint16_t port = 8080;
   std::vector<std::string> paths;
   std::vector<std::string> conns;
   std::vector<std::string> plugin_names;
+  bool allow_dynamic_components = false;
 
-    // get user home directory
+  // get user home directory
   const char * home_env = std::getenv("HOME");
   if (home_env != nullptr) {
     home_dir = std::string(home_env) + "/.rpp";
@@ -51,6 +52,7 @@ int main(int argc, char **argv)
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
+    if (arg == "--allow-dynamic-components") {allow_dynamic_components = true;}
     if (arg == "--help" || arg == "-h") {
       std::cout << "Usage: " << argv[0] << " [--help|-h]" << std::endl;
       return 0;
@@ -96,15 +98,17 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  RPP_LOG_DEBUG(*logger, "Parsed host=%s port=%d home=%s components=%zu.",
-                 host.c_str(), port, rpp::RPP_HOME.c_str(), paths.size());
+  RPP_LOG_DEBUG(
+    *logger, "Parsed host=%s port=%d home=%s components=%zu.",
+    host.c_str(), port, rpp::RPP_HOME.c_str(), paths.size());
 
   rpp::RppDataManager data_manager(rpp::RPP_HOME);
   rpp::RppServerHost server_host(host, port, logger);
   active_server_host = &server_host;
   std::signal(SIGINT, handle_interrupt);
   std::signal(SIGTERM, handle_interrupt);
-  rpp::ComponentContextBuilder context_builder(data_manager);
+  rpp::ComponentContextBuilder context_builder(data_manager, rpp::ClockOptions{},
+    allow_dynamic_components);
 
   std::cout << "Starting component server on " << host << ":" << port << std::endl;
 
@@ -113,8 +117,8 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < paths.size(); ++i) {
     const auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
     if (!rpp::is_cpp_source_language(plugin_info)) {
-      std::cerr       << "Error: component_server_cpp can only host C++ root components: "
-                      << plugin_names[i] << std::endl;
+      std::cerr << "Error: component_server_cpp can only host C++ root components: "
+                << plugin_names[i] << std::endl;
       return 1;
     }
     roots.push_back({paths[i], plugin_names[i]});
@@ -125,8 +129,8 @@ int main(int argc, char **argv)
   auto contexts = context_builder.build_from_component_roots(roots);
   auto cleanup_contexts = [&]() {
       rpp::CallbackResult first_error;
-      for (auto context = contexts.rbegin(); context != contexts.rend(); ++context) {
-        auto result = context->cleanup();
+      for (auto conn = conns.rbegin(); conn != conns.rend(); ++conn) {
+        auto result = server_host.cleanup_component(*conn);
         if (!result.success) {
           RPP_LOG_ERROR(*logger, "Component cleanup failed: %s", result.message.c_str());
           if (first_error.success) {first_error = result;}
@@ -143,17 +147,18 @@ int main(int argc, char **argv)
 
       std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
       auto & context = contexts[i];
-      context.configure().require_success("on_configure");
-      RPP_LOG_DEBUG(*logger, "Context configured plugin=%s connection=%s.",
-                     plugin_names[i].c_str(), conn.c_str());
+      RPP_LOG_DEBUG(
+        *logger, "Context prepared plugin=%s connection=%s.",
+        plugin_names[i].c_str(), conn.c_str());
       auto server_adapter = rpp::load_plugin_adapter_server(
-            plugin_info, context.get_instance<rpp::Plugin>(),
-            conn + "_server", conn, "create_plugin_server", logger);
+        plugin_info, context.get_instance<rpp::Plugin>(),
+        conn + "_server", conn, "create_plugin_server", logger);
       std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
 
-      server_host.add_server(std::move(server_adapter));
-      RPP_LOG_DEBUG(*logger, "Adapter registered plugin=%s connection=%s.",
-                     plugin_names[i].c_str(), conn.c_str());
+      server_host.add_server(std::move(server_adapter), &context);
+      RPP_LOG_DEBUG(
+        *logger, "Adapter registered plugin=%s connection=%s.",
+        plugin_names[i].c_str(), conn.c_str());
     }
     RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
     server_host.run();

@@ -3,7 +3,8 @@
 #include <thread>
 #include <vector>
 
-#include "rpp_cpp/plugin_manager.hpp"
+#include "rpp_cpp/component_manager.hpp"
+#include "rpp_cpp/context.hpp"
 
 namespace rpp
 {
@@ -12,8 +13,9 @@ class ComponentContextAccess
 public:
   static ComponentContext make(std::shared_ptr<Plugin> plugin)
   {
-    return ComponentContext(std::move(plugin), params::Parameters{}, nullptr,
-      ComponentContext::SubcomponentMap{}, ClockOptions{});
+    return ComponentContext(
+      std::move(plugin), params::Parameters{}, nullptr,
+      ComponentContext::SubcomponentSlots{}, ClockOptions{});
   }
 };
 }  // namespace rpp
@@ -31,18 +33,23 @@ public:
   rpp::CallbackResult on_configure(const rpp::ComponentContext &) override
   {
     events.push_back("configure");
-    return reject == "configure" ? rpp::CallbackResult::failure("configuration rejected") : rpp::CallbackResult{};
+    return reject ==
+           "configure" ? rpp::CallbackResult::failure("configuration rejected") : rpp::
+           CallbackResult{};
   }
   rpp::CallbackResult on_activate(const std::optional<Estimate> & state) override
   {
     events.push_back("activate");
     if (state) {estimate = *state;}
-    return reject == "activate" ? rpp::CallbackResult::failure("activation rejected") : rpp::CallbackResult{};
+    return reject ==
+           "activate" ? rpp::CallbackResult::failure("activation rejected") : rpp::CallbackResult{};
   }
   rpp::DeactivationResult<Estimate> on_deactivate() override
   {
     events.push_back("deactivate");
-    return {reject == "deactivate" ? rpp::CallbackResult::failure("still active") : rpp::CallbackResult{}, estimate};
+    return {reject ==
+      "deactivate" ? rpp::CallbackResult::failure("still active") : rpp::CallbackResult{},
+      estimate};
   }
   rpp::CallbackResult on_cleanup() override {events.push_back("cleanup"); return {};}
 };
@@ -51,11 +58,11 @@ class ManagerTest : public ::testing::Test
 {
 public:
   std::vector<std::shared_ptr<Localizer>> plugins;
-  rpp::PluginManager manager{[this](const std::string &) {
+  rpp::ComponentManager manager{[this](const std::string &) {
       auto plugin = std::make_shared<Localizer>();
       plugins.push_back(plugin);
       return rpp::ComponentContextAccess::make(plugin);
-    }};
+    }, rpp::ActivationPolicy::MULTIPLE, true};
 
   void ready(const std::string & name = "localizer")
   {
@@ -66,15 +73,36 @@ public:
 };
 }  // namespace
 
+TEST(ComponentManagerRecovery, FailedLoadCleanupPreservesErrorAndAllowsUnloadRetry)
+{
+  bool fail_load = true;
+  rpp::ComponentManager manager([&](const std::string &) {
+      if (fail_load) {throw std::runtime_error("load rejected");}
+      return rpp::ComponentContextAccess::make(std::make_shared<Localizer>());
+    }, rpp::ActivationPolicy::MULTIPLE, true);
+  EXPECT_FALSE(manager.load("localizer", "/workspace/localizer").success);
+  auto result = manager.cleanup("localizer");
+  EXPECT_FALSE(result.success);
+  EXPECT_NE(result.message.find("No loaded context"), std::string::npos);
+  EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::ERROR);
+  EXPECT_FALSE(manager.get_info("localizer").transition.has_value());
+  ASSERT_TRUE(manager.unload("localizer").success);
+  fail_load = false;
+  ASSERT_TRUE(manager.load("localizer").success);
+  EXPECT_TRUE(manager.configure("localizer").success);
+}
+
 TEST_F(ManagerTest, NormalFlowIdempotenceAndGeneration)
 {
   ready();
   auto generation = manager.get_info("localizer").generation;
   ASSERT_TRUE(manager.activate("localizer").success);
   EXPECT_EQ(plugins[0]->events, (std::vector<std::string>{"configure", "activate"}));
-  EXPECT_EQ(manager.with_active<Localizer>("localizer", [](auto & plugin) {
-      return plugin.estimate.position;
-    }), (std::vector<double>{1.0}));
+  EXPECT_EQ(
+    manager.with_active<Localizer>(
+      "localizer", [](auto & plugin) {
+        return plugin.estimate.position;
+      }), (std::vector<double>{1.0}));
   auto stopped = manager.deactivate("localizer");
   ASSERT_TRUE(stopped.result.success);
   ASSERT_TRUE(stopped.state.has_value());
@@ -85,7 +113,10 @@ TEST_F(ManagerTest, NormalFlowIdempotenceAndGeneration)
   EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::UNLOADED);
   ready();
   EXPECT_GT(manager.get_info("localizer").generation, generation);
-  EXPECT_THROW(manager.with_active<Localizer>("localizer", [](auto &) {}, generation), rpp::LifecycleError);
+  EXPECT_THROW(
+    manager.with_active<Localizer>(
+      "localizer", [](
+        auto &) {}, generation), rpp::LifecycleError);
 }
 
 TEST_F(ManagerTest, InvalidTransitionLeavesStateAndBlocksDomainCalls)
@@ -114,10 +145,14 @@ TEST_F(ManagerTest, DrainTimeoutRetainsInstanceAndAllowsRetry)
   ready();
   std::promise<void> entered, release;
   auto released = release.get_future().share();
-  auto caller = std::async(std::launch::async, [&] {manager.with_active<Localizer>("localizer", [&](auto &) {
-      entered.set_value();
-      released.wait();
-    });});
+  auto caller = std::async(
+    std::launch::async, [&] {
+      manager.with_active<Localizer>(
+        "localizer", [&](auto &) {
+          entered.set_value();
+          released.wait();
+        });
+    });
   auto entered_state = entered.get_future();
   const auto observed = entered_state.wait_for(std::chrono::milliseconds(500));
   if (observed != std::future_status::ready) {release.set_value();}
@@ -135,13 +170,15 @@ TEST_F(ManagerTest, SwitchingCopiesStateAndDoesNotReactivateOnTargetFailure)
 {
   ready("ekf");
   ASSERT_TRUE(manager.load("particle", "/workspace/particle").success);
-  ASSERT_TRUE(manager.switch_plugins("ekf", "particle", true).success);
+  ASSERT_TRUE(manager.switch_components("ekf", "particle", true).success);
   plugins[0]->estimate.position.push_back(99.0);
-  EXPECT_EQ(manager.with_active<Localizer>("particle", [](auto & plugin) {
-      return plugin.estimate.position;
-    }), (std::vector<double>{1.0}));
+  EXPECT_EQ(
+    manager.with_active<Localizer>(
+      "particle", [](auto & plugin) {
+        return plugin.estimate.position;
+      }), (std::vector<double>{1.0}));
   plugins[0]->reject = "activate";
-  EXPECT_FALSE(manager.switch_plugins("particle", "ekf", true).success);
+  EXPECT_FALSE(manager.switch_components("particle", "ekf", true).success);
   EXPECT_EQ(manager.get_state("particle"), rpp::LifecycleState::INACTIVE);
   EXPECT_EQ(manager.get_state("ekf"), rpp::LifecycleState::ERROR);
 }
@@ -154,9 +191,11 @@ TEST_F(ManagerTest, ReloadConstructsNewContextAndOptionallyTransfersState)
   ASSERT_TRUE(manager.reload("localizer", true).success);
   EXPECT_GT(manager.get_info("localizer").generation, generation);
   EXPECT_EQ(plugins.size(), 2u);
-  EXPECT_EQ(manager.with_active<Localizer>("localizer", [](auto & plugin) {
-      return plugin.estimate.position;
-    }), (std::vector<double>{7.0}));
+  EXPECT_EQ(
+    manager.with_active<Localizer>(
+      "localizer", [](auto & plugin) {
+        return plugin.estimate.position;
+      }), (std::vector<double>{7.0}));
   ASSERT_TRUE(manager.reload("localizer").success);
   EXPECT_EQ(plugins.back()->estimate.position, (std::vector<double>{1.0}));
 }
@@ -164,7 +203,8 @@ TEST_F(ManagerTest, ReloadConstructsNewContextAndOptionallyTransfersState)
 TEST_F(ManagerTest, ReentrantManagementFromGuardIsRejected)
 {
   ready();
-  auto result = manager.with_active<Localizer>("localizer", [&](auto &) {
+  auto result = manager.with_active<Localizer>(
+    "localizer", [&](auto &) {
       return manager.deactivate("localizer");
     });
   EXPECT_FALSE(result.result.success);

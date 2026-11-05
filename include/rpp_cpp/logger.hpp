@@ -39,7 +39,7 @@ public:
   ~RppLogger();
 
     // Core log execution logic containing the underlying backends mapping
-  void log(LogLevel level, const char * file, int line, std::string_view msg);
+  void log(LogLevel level, const char * file, int line, std::string_view msg) const;
 
 private:
   LoggerOptions options_;
@@ -99,7 +99,7 @@ class LogMessageBuilder {
   }
 
 public:
-  LogMessageBuilder(RppLogger & logger, LogLevel level, const char * file, int line)
+  LogMessageBuilder(const RppLogger & logger, LogLevel level, const char * file, int line)
   : logger_(logger), level_(level), file_(file), line_(line) {}
 
 
@@ -115,7 +115,7 @@ public:
   }
 
 private:
-  RppLogger & logger_;
+  const RppLogger & logger_;
   LogLevel level_;
   const char * file_;
   int line_;

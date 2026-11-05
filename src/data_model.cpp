@@ -1,4 +1,5 @@
 #include "rpp_cpp/data_model.hpp"
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 namespace rpp
@@ -172,6 +173,22 @@ LinkedComponentRecord LinkedComponentRecord::from_json(
     record.parent_component_info = parent_info;
   }
   return record;
+}
+
+const ScriptDescription::ComponentAssignments & ScriptDescription::get_components(
+  const std::optional<std::string> & configuration) const
+{
+  if (configurations.empty()) {
+    throw std::runtime_error("Script description does not define configurations.");
+  }
+  const auto & selected_configuration = configuration.has_value() ?
+    *configuration : active_configuration;
+  const auto selected = configurations.find(selected_configuration);
+  if (selected == configurations.end()) {
+    throw std::runtime_error(
+            "Script configuration '" + selected_configuration + "' is not defined.");
+  }
+  return selected->second;
 }
 
 ScriptDescription ScriptDescription::from_json(

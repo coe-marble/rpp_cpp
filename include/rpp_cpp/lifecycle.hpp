@@ -28,10 +28,11 @@ struct CallbackResult
     return {false, std::move(message)};
   }
 
-  void require_success(const std::string & operation) const
+  void require_success(const std::string & operation = "") const
   {
     if (!success) {
-      throw LifecycleError(operation + " failed: " + message);
+      const auto reason = message.empty() ? "Operation failed" : message;
+      throw LifecycleError(operation.empty() ? reason : operation + " failed: " + reason);
     }
   }
 };

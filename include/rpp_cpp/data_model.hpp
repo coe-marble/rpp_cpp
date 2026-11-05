@@ -119,6 +119,15 @@ public:
   std::string active_configuration;
   std::map<std::string, std::string> spec;
 
+  /**
+   * Return component assignments for a named configuration, or the active one if omitted.
+   * The returned reference belongs to this description and remains valid until its
+   * configuration is erased or the description is destroyed.
+   * @throws std::runtime_error If no configurations exist or the selected name is undefined.
+   */
+  const ComponentAssignments & get_components(
+    const std::optional<std::string> & configuration = std::nullopt) const;
+
   static ScriptDescription from_json(
     const nlohmann::json & j, const std::string & script_path);
 };

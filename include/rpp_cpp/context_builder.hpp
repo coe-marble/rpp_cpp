@@ -1,31 +1,66 @@
 #pragma once
 #include <optional>
-#include <set>
 #include <string>
 #include <utility>
+#include <functional>
+#include <map>
+#include <variant>
 
 #include "context.hpp"
-#include "parameter_handler.hpp"
 #include "data_manager.hpp"
-#include "plugin_loader.hpp"
-#include "network_utils.hpp"
 #include "external_component_process.hpp"
-#include "rpp_paths.hpp"
 
 
 namespace rpp
 {
 
-class ComponentContextBuilder {
+/**
+ * Constructs component/script contexts from workspace descriptions.
+ * Loads instances and parameters, builds child trees, and installs slot managers.
+ * Building prepares transports but never calls configure or activate callbacks.
+ * Build calls on the same builder must not overlap or reenter the builder.
+ * See docs/context-flow.md for the complete construction and ownership sequence.
+ */
+class ComponentContextBuilder
+{
+  friend class ComponentContextAccess;
 
 public:
+  /**
+   * Initial admission validators indexed by slot plugin type, then candidate component name.
+   * The type is the base plugin identity (without List/Option wrappers).
+   * Initial names use the workspace component name; empty names are rejected on registration.
+   * dynamic candidates use the name supplied to load_component().
+   * Rules apply to matching candidates throughout the constructed tree.
+   * Validators receive prepared contexts before those contexts enter their slot.
+   */
+  using RegistrationValidators = std::map<std::string,
+      std::map<std::string, ComponentContext::RegistrationValidator>>;
+
+  /**
+   * Copyable callback: bool(slot_name, slot_type).
+   * ComponentSlot exposes plugin_type, kind (SINGLE/OPTION/LIST), and activation_policy().
+   * Invoked once per slot when its context is assembled, including empty declared slots.
+   * The result is fixed for that slot's lifetime. Nested slots use the same callback;
+   * identical names in different contexts are evaluated independently.
+   * This sets permissions on managers created locally; it is not sent to external hosts.
+   * Keep captured references alive for later dynamic builds as well as initial construction.
+   */
+  using DynamicComponentPolicy =
+    std::function<bool (const std::string &, const ComponentSlot &)>;
+
+  /// One workspace root requested by build_from_component_roots().
   struct ComponentRoot
   {
+    /// Component folder, containing its description or a linked-component record.
     std::string path;
+    /// Registered library::Plugin identity; required for a linked root, otherwise optional.
     std::string plugin_name;
   };
 
 private:
+  using SubcomponentMap = std::map<std::string, std::vector<ComponentContext>>;
+
   struct ComponentNode
   {
     std::string path;
@@ -41,327 +76,179 @@ private:
     std::shared_ptr<ExternalComponentProcess> process;
   };
 
+  using PreparedComponents = std::map<std::string, PreparedAdaptedComponent>;
+
   std::shared_ptr<rpp::RppDataManager> data_manager_own_;
   rpp::RppDataManager & data_manager_;
   ClockOptions clock_options_;
-  std::map<std::string, PreparedAdaptedComponent> adapted_components_;
-  struct PreparationScope
-  {
-    std::map<std::string, PreparedAdaptedComponent> & prepared;
-    ~PreparationScope() {prepared.clear();}
-  };
+  std::variant<bool, DynamicComponentPolicy> dynamic_components_;
+  RegistrationValidators registration_validators_;
+
   ExternalComponentProcessRegistry external_component_process_registry_;
 
 public:
+  /**
+   * Borrow a data manager and apply one dynamic-modification flag to every slot.
+   * @param data_manager Must outlive this builder and its build calls.
+   * @param clock_options Clock settings passed to every constructed context.
+   * @param allow_dynamic_components Enable runtime load/unload, replacement, and selection changes.
+   * False still permits initial construction, normal lifecycle, and root shutdown.
+   * @param validators Initial type/name admission rules; copied/moved into the builder.
+   * Does not read component descriptions, construct plugins, or invoke lifecycle callbacks.
+   */
   ComponentContextBuilder(
     rpp::RppDataManager & data_manager,
-    const ClockOptions & clock_options = ClockOptions())
-  : data_manager_own_(nullptr),
-    data_manager_(data_manager),
-    clock_options_(clock_options) {}
+    const ClockOptions & clock_options = ClockOptions(), bool allow_dynamic_components = false,
+    RegistrationValidators validators = {});
 
-  explicit ComponentContextBuilder(const ClockOptions & clock_options = ClockOptions())
-  : data_manager_own_(std::make_shared<rpp::RppDataManager>()),
-    data_manager_(*data_manager_own_.get()),
-    clock_options_(clock_options) {}
+  /**
+   * Borrow a data manager and decide dynamic permission separately for each slot.
+   * @param data_manager Must outlive this builder and its build calls.
+   * @param clock_options Clock settings passed to constructed contexts.
+   * @param policy Copyable callable bool(const std::string &, const ComponentSlot &).
+   * Receives the slot name and parsed type; true enables mutation for that slot.
+   * The callback is copied into factories used for later dynamic loading, preserving
+   * the policy for newly constructed descendants after this builder is destroyed.
+   * @param validators Initial admission rules, independent of dynamic permission.
+   * @throws std::invalid_argument If the supplied callable wrapper is empty.
+   * Policy exceptions propagate from build calls, not from this constructor.
+   * The callback only sets each local slot manager's permission, regardless of the
+   * source language of the components in that slot. External hosts are started normally.
+   */
+  ComponentContextBuilder(
+    rpp::RppDataManager & data_manager, DynamicComponentPolicy policy,
+    const ClockOptions & clock_options = ClockOptions(), RegistrationValidators validators = {});
 
-  virtual ~ComponentContextBuilder() = default;
+  /**
+   * Own a default RppDataManager using the configured RPP_HOME.
+   * @param clock_options Clock settings passed to every constructed context.
+   * @param allow_dynamic_components Uniform slot permission; false by default.
+   * @param validators Initial admission rules keyed by slot plugin type and candidate name.
+   * Otherwise has the same construction/lifecycle behavior as the borrowed-manager overload.
+   */
+  explicit ComponentContextBuilder(
+    const ClockOptions & clock_options = ClockOptions(),
+    bool allow_dynamic_components = false, RegistrationValidators validators = {});
 
+  /// Destroy the builder; returned contexts retain their own resources/factories.
+  virtual ~ComponentContextBuilder();
+
+  /**
+   * Select the executable used to host an adapted source language in future builds.
+   * @param language Source-language name, normalized case-insensitively.
+   * @param command Executable name/path; registration does not launch it.
+   * @throws std::invalid_argument If language or command is empty.
+   * Replaces that language's previous registration. Existing contexts are unaffected.
+   */
   void register_external_component_server(
-    const std::string & language, const std::string & command)
-  {
-    external_component_process_registry_.register_server(language, command);
-  }
+    const std::string & language, const std::string & command);
 
-  ComponentContext build_component_from_path(const std::string & component_path)
-  {
-    PreparationScope ownership{adapted_components_};
-    prepare_component_processes({
-        make_component_node(component_path, component_path, "")});
-    return build_for_component(component_path);
-  }
+  /**
+   * Build one prepared, unconfigured component tree.
+   * @param component_path Folder containing the component description.
+   * @return An owning root context; no configure/activate callback has run.
+   * Resolves records, creates plugin instances, resolves parameters, recursively builds
+   * children, and prepares adapted transports when needed.
+   * For a linked root requiring an explicit plugin identity, use build_from_component_roots().
+   * @throws std::exception On invalid/missing data, loading, admission, policy, or transport failure.
+   * Policy/validator failures abort construction; preparation references are released.
+   */
+  ComponentContext build_component_from_path(const std::string & component_path);
 
+  /**
+   * Build several roots after preparing their adapted transports as a batch.
+   * @param roots Component folders and optional/linked-root plugin identities.
+   * @return Contexts in the same order as roots; empty input produces an empty vector.
+   * Each context owns its tree/handles; roots may share a prepared external host.
+   * Does not configure or activate plugins. Failure releases this batch's preparation state.
+   * @throws std::exception For the same construction failures as build_component_from_path().
+   */
   std::vector<ComponentContext> build_from_component_roots(
-    const std::vector<ComponentRoot> & roots)
-  {
-    PreparationScope ownership{adapted_components_};
-    std::vector<ComponentNode> root_nodes;
-    root_nodes.reserve(roots.size());
-    for (const auto & root : roots) {
-      root_nodes.push_back(make_component_node(
-                    root.path, root.path, root.plugin_name));
-    }
-    prepare_component_processes(root_nodes);
+    const std::vector<ComponentRoot> & roots);
 
-    std::vector<ComponentContext> contexts;
-    contexts.reserve(root_nodes.size());
-    for (const auto & root : root_nodes) {
-      contexts.push_back(build_for_component(
-                    root.path, root.parent_path, root.plugin_name));
-    }
-    return contexts;
-  }
-
+  /**
+   * Build a script context from the workspace description associated with its source path.
+   * @param script_path Script source path, used to find .rppws/script_descriptions/<stem>.json.
+   * @param configuration Configuration name; omitted means the description's active configuration.
+   * @return A script context with managed slots and no plugin instance of its own.
+   * Does not execute the script or invoke configure/activate callbacks.
+   * @throws std::exception If the description/configuration cannot be resolved or construction fails.
+   */
   ComponentContext build_script_from_path(
     const std::string & script_path,
-    std::optional<std::string> configuration = std::nullopt)
-  {
-    return build_script_from_description_path(
-                data_manager_.get_default_script_description_path(script_path),
-                std::move(configuration));
-  }
+    std::optional<std::string> configuration = std::nullopt);
 
+  /**
+   * Find a script in the data manager's selected workspace and build its assignments.
+   * @param library_name Library owning the registered script identity.
+   * @param script_name Unqualified name or matching library::name.
+   * @param configuration Configuration name; omitted selects the active configuration.
+   * @return An owning, unconfigured script context; the script is not executed.
+   * @throws std::exception On missing/ambiguous script identity, configuration, or build failure.
+   */
   ComponentContext build_script_from_library(
     const std::string & library_name,
     const std::string & script_name,
-    std::optional<std::string> configuration = std::nullopt)
-  {
-    return build_script_from_description_path(
-                data_manager_.get_script_description_path_from_library(
-                    library_name, script_name),
-                std::move(configuration));
-  }
+    std::optional<std::string> configuration = std::nullopt);
 
+  /**
+   * Build assignments from an explicit script-description JSON file.
+   * @param script_description_path Description containing Spec, Configurations, and ActiveConfiguration.
+   * @param configuration Configuration name, or the description's active configuration.
+   * @param parts_folder Override the component parts directory; omitted uses the workspace parts folder.
+   * @return A script root whose slot managers own the built component contexts.
+   * Empty declared slots are retained. Configure/activate remain explicit application operations.
+   * @throws std::exception On description/configuration errors or any component construction failure.
+   */
   ComponentContext build_script_from_description_path(
     const std::string & script_description_path,
     std::optional<std::string> configuration = std::nullopt,
-    std::optional<std::string> parts_folder = std::nullopt)
-  {
-    PreparationScope ownership{adapted_components_};
-    const auto script_description = data_manager_.load_script_description(
-                script_description_path);
-    const auto & components = get_script_components(
-                script_description, configuration);
-    const auto resolved_parts_folder = parts_folder.has_value() ?
-      *parts_folder :
-      data_manager_.get_default_script_parts_folder_path_from_description(
-                    script_description_path);
-
-    std::vector<ComponentNode> roots;
-    for (const auto & [slot_name, assigned_components] : components) {
-      (void)slot_name;
-      for (const auto & component : assigned_components) {
-        const auto component_path =
-          data_manager_.get_component_path_in_parts_folder(
-                            resolved_parts_folder, component.plugin_name, component.id);
-        roots.push_back(make_component_node(
-                        component_path, component_path, component.plugin_name));
-      }
-    }
-    prepare_component_processes(roots);
-
-    std::map<std::string, std::vector<ComponentContext>> subcomponents;
-    for (const auto & [slot_name, assigned_components] : components) {
-      auto & slot_subcomponents = subcomponents[slot_name];
-      for (const auto & component : assigned_components) {
-        const auto component_path =
-          data_manager_.get_component_path_in_parts_folder(
-                            resolved_parts_folder, component.plugin_name, component.id);
-        slot_subcomponents.push_back(build_for_component(
-                        component_path, component_path, component.plugin_name));
-      }
-    }
-    return ComponentContext(std::move(subcomponents), clock_options_);
-  }
+    std::optional<std::string> parts_folder = std::nullopt);
 
 private:
-  static const ScriptDescription::ComponentAssignments &
-  get_script_components(
-    const ScriptDescription & script_description,
-    const std::optional<std::string> & configuration)
-  {
-    if (script_description.configurations.empty()) {
-      throw std::runtime_error(
-                    "Script description does not define configurations.");
-    }
-    const auto & selected_configuration = configuration.has_value() ?
-      *configuration : script_description.active_configuration;
-    const auto selected = script_description.configurations.find(
-                selected_configuration);
-    if (selected == script_description.configurations.end()) {
-      throw std::runtime_error(
-                    "Script configuration '" + selected_configuration +
-                    "' is not defined.");
-    }
-    return selected->second;
-  }
+  DynamicComponentPolicy dynamic_policy() const;
+
+  // The builder constructs the initial tree. Managers retain this callable only
+  // to request construction through a builder during later runtime loads/reloads,
+  // even after the original builder is destroyed. It is not a separate loader.
+  ComponentManager::ContextFactory make_factory() const;
+
+  // Assemble slot managers and move initial children into them before creating the parent context.
+  static ComponentContext::SubcomponentSlots make_slot_managers(
+    SubcomponentMap subcomponents,
+    const std::map<std::string, std::string> & spec = {},
+    const ComponentManager::ContextFactory & factory = {},
+    const DynamicComponentPolicy & dynamic_policy = {},
+    const RegistrationValidators & named_validators = {},
+    const std::map<std::string, ComponentManager::Validator> & validators = {});
 
   ComponentRecord resolve_component(
     const std::string & component_path,
     const std::string & parent_component_path,
-    const std::string & plugin_name = "") const
-  {
-    auto component_record = data_manager_.load_component_info(component_path);
-    if (std::holds_alternative<LinkedComponentRecord>(component_record)) {
-      auto linked_record = std::get<LinkedComponentRecord>(component_record);
-      if (plugin_name.empty()) {
-        throw std::runtime_error(
-                        "Plugin name must be provided for linked components.");
-      }
-      auto linked_component_path = data_manager_.get_linked_component_folder_path(
-                    parent_component_path, plugin_name, linked_record.linked_component_id);
-      auto linked_component_record =
-        data_manager_.load_component_info(linked_component_path);
-      if (std::holds_alternative<ComponentRecord>(linked_component_record)) {
-        return std::get<ComponentRecord>(linked_component_record);
-      } else {
-        throw std::runtime_error("Doubly linked components are not supported.");
-      }
-    } else if (std::holds_alternative<ComponentRecord>(component_record)) {
-      return std::get<ComponentRecord>(component_record);
-    } else {
-      throw std::runtime_error("Invalid component record type.");
-    }
-  }
+    const std::string & plugin_name = "") const;
 
   ComponentContext build_native_component(
     const rpp::ComponentRecord & record,
-    const rpp::PluginInfo & plugin_info) const
-  {
-    auto instance =
-      rpp::load_cpp_plugin_from_shared_library(plugin_info);
-    std::unique_ptr<rpp::params::Parameters> params;
-    {
-                // In scope to ensure ParameterHandler is destroyed before returning
-      params::ParameterHandler parameter_handler(record.folder);
-      auto params_module = parameter_handler.load_parameters_from_python_module();
-      params::ParameterHandler::resolve_params(
-                    plugin_info.plugin_metadata.parameters, params_module, params);
-    }
-
-    std::map<std::string, std::vector<rpp::ComponentContext>> subcomponents;
-    for (const auto & [slot_name, subcomponent_infos] : record.subcomponents) {
-      auto & slot_subcomponents = subcomponents[slot_name];
-      for (const auto & subcomponent_info : subcomponent_infos) {
-        auto subcomponent_path = data_manager_
-          .get_subcomponent_folder_path(
-                            record.folder, subcomponent_info.id);
-        slot_subcomponents.push_back(build_for_component(
-                        subcomponent_path, record.folder,
-                        subcomponent_info.plugin_name));
-      }
-    }
-    return ComponentContext(
-                std::move(instance), std::move(*params), std::move(subcomponents), clock_options_);
-
-  }
+    const rpp::PluginInfo & plugin_info,
+    const PreparedComponents & prepared_components) const;
 
   ComponentNode make_component_node(
     const std::string & component_path,
     const std::string & parent_component_path,
-    const std::string & plugin_name) const
-  {
-    auto record = resolve_component(
-                component_path, parent_component_path, plugin_name);
-    auto plugin_info = data_manager_.get_plugin_info_from_lib(
-                record.plugin_name);
-    return {
-      component_path, parent_component_path, plugin_name,
-      record, plugin_info,
-    };
-  }
+    const std::string & plugin_name) const;
 
   void collect_component_nodes(
     const ComponentNode & node,
-    std::vector<ComponentNode> & nodes) const
-  {
-    if (!is_cpp_source_language(node.plugin_info)) {
-      nodes.push_back(node);
-      return;
-    }
-    nodes.push_back(node);
-    for (const auto & [slot_name, subcomponents] : node.record.subcomponents) {
-      (void)slot_name;
-      for (const auto & subcomponent : subcomponents) {
-        collect_component_nodes(
-                        make_component_node(
-                            data_manager_.get_subcomponent_folder_path(
-                                node.record.folder, subcomponent.id),
-                            node.path,
-                            subcomponent.plugin_name),
-                        nodes);
-      }
-    }
-  }
+    std::vector<ComponentNode> & nodes) const;
 
-  void prepare_component_processes(
-    const std::vector<ComponentNode> & roots)
-  {
-    adapted_components_.clear();
-    std::vector<ComponentNode> nodes;
-    for (const auto & root : roots) {
-      collect_component_nodes(root, nodes);
-    }
-
-    std::map<std::string, std::vector<ComponentNode>> groups;
-    for (auto & node : nodes) {
-      if (!is_cpp_source_language(node.plugin_info)) {
-        groups[to_lower_copy(node.plugin_info.source_language)].push_back(
-                        std::move(node));
-      }
-    }
-
-    std::set<std::string> connection_names;
-    for (auto & [language, group] : groups) {
-      std::vector<ExternalComponentSpec> component_specs;
-      component_specs.reserve(group.size());
-      for (const auto & node : group) {
-        const auto connection_name = node.record.id + "_connection";
-        if (!connection_names.insert(connection_name).second) {
-          throw std::runtime_error(
-                            "Duplicate adapted component connection name '" +
-                            connection_name + "'.");
-        }
-        component_specs.push_back({
-            node.record.folder,
-            node.plugin_info,
-            connection_name,
-                    });
-      }
-      auto prepared = ExternalComponentProcess::create(
-                    language, RPP_HOME, component_specs,
-                    external_component_process_registry_);
-      for (size_t index = 0; index < group.size(); ++index) {
-        adapted_components_[group[index].record.folder] = {
-          std::move(prepared.instances[index]), prepared.process,
-        };
-      }
-    }
-  }
+  PreparedComponents prepare_component_processes(
+    const std::vector<ComponentNode> & roots) const;
 
   ComponentContext build_for_component(
     std::string component_path,
+    const PreparedComponents & prepared_components,
     std::string parent_component_path = "",
-    std::string plugin_name = "") const
-  {
-    if (parent_component_path.empty()) {
-      parent_component_path = component_path;
-    }
-    auto record = resolve_component(component_path,
-                parent_component_path, plugin_name);
-
-    rpp::PluginInfo plugin_info =
-      data_manager_.get_plugin_info_from_lib(record.plugin_name);
-    if (is_cpp_source_language(plugin_info)) {
-      return build_native_component(
-                    record, plugin_info);
-    }
-    auto prepared = adapted_components_.find(record.folder);
-    if (prepared == adapted_components_.end()) {
-      throw std::runtime_error(
-                    "Adapted component was not prepared before context construction.");
-    }
-
-    std::unique_ptr<params::Parameters> params;
-    params::ParameterHandler parameter_handler(record.folder);
-    auto params_module = parameter_handler.load_parameters_from_python_module();
-    params::ParameterHandler::resolve_params(
-                plugin_info.plugin_metadata.parameters, params_module, params);
-    std::map<std::string, std::vector<ComponentContext>> subcomponents;
-    return ComponentContext(
-                prepared->second.instance, std::move(*params),
-                prepared->second.process, std::move(subcomponents), clock_options_);
-  }
+    std::string plugin_name = "") const;
 
 };
 } /// namespace rpp

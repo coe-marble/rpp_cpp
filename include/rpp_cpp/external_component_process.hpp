@@ -31,7 +31,8 @@ struct ExternalComponentSpec
   std::string connection_name;
 };
 
-class ExternalComponentProcessRegistry final {
+class ExternalComponentProcessRegistry final
+{
 public:
   ExternalComponentProcessRegistry()
   {
@@ -43,7 +44,7 @@ public:
   {
     if (language.empty() || command.empty()) {
       throw std::invalid_argument(
-                "External component server language and command are required.");
+              "External component server language and command are required.");
     }
     commands_[to_lower_copy(language)] = command;
   }
@@ -53,8 +54,8 @@ public:
     auto server = commands_.find(to_lower_copy(language));
     if (server == commands_.end()) {
       throw std::runtime_error(
-                "No external component server is registered for source language '" +
-                language + "'.");
+              "No external component server is registered for source language '" +
+              language + "'.");
     }
     return server->second;
   }
@@ -63,8 +64,25 @@ private:
   std::map<std::string, std::string> commands_;
 };
 
-class ExternalComponentProcess final {
+class ExternalComponentProcess final
+{
 public:
+  CallbackResult configure_component(const std::string & name)
+  {
+    return executor_.call(
+      [this, &name](kj::AsyncIoContext &) {
+        return runtime_client_->configure_component(name);
+      });
+  }
+
+  CallbackResult cleanup_component(const std::string & name)
+  {
+    return executor_.call(
+      [this, &name](kj::AsyncIoContext &) {
+        return runtime_client_->cleanup_component(name);
+      });
+  }
+
   struct PreparedComponents
   {
     std::shared_ptr<ExternalComponentProcess> process;
@@ -77,17 +95,18 @@ public:
     const std::vector<ExternalComponentSpec> & components,
     const ExternalComponentProcessRegistry & process_registry,
     const std::string & host = "127.0.0.1",
-    std::shared_ptr<RppLogger> logger = nullptr)
+    std::shared_ptr<RppLogger> logger = nullptr, bool allow_dynamic_components = false)
   {
     if (components.empty()) {
       throw std::invalid_argument(
-                "External component runtime requires a component.");
+              "External component runtime requires a component.");
     }
 
     const auto port = get_available_port();
     const auto & server_command = process_registry.command_for(language);
     if (!logger) {
-      logger = std::make_shared<RppLogger>(LoggerOptions{
+      logger = std::make_shared<RppLogger>(
+        LoggerOptions{
           LogLevel::DEBUG, "rpp_external_runtime"});
     }
     std::vector<ClientAdapterOwner> adapter_owners;
@@ -96,32 +115,34 @@ public:
       server_command, "--host", host,
       "--port", std::to_string(port), "--home", rpp_home,
     };
+    if (allow_dynamic_components) {command.push_back("--allow-dynamic-components");}
     for (const auto & component : components) {
       auto adapter = load_plugin_adapter_client(
-                component.plugin_info,
-                component.plugin_info.plugin_name + "_client",
-                component.connection_name,
-                "create_plugin_client",
-                logger);
+        component.plugin_info,
+        component.plugin_info.plugin_name + "_client",
+        component.connection_name,
+        "create_plugin_client",
+        logger);
       auto plugin = dynamic_cast<Plugin *>(adapter.get());
       if (plugin == nullptr) {
         throw std::runtime_error(
-                    "Adapted component client does not implement Plugin.");
+                "Adapted component client does not implement Plugin.");
       }
       std::shared_ptr<ClientAdapter> adapter_owner = std::move(adapter);
       adapter_owners.push_back(adapter_owner);
       instances.emplace_back(adapter_owner, plugin);
-      command.insert(command.end(), {
+      command.insert(
+        command.end(), {
           "--path", component.component_path,
           "--plugin", component.plugin_info.plugin_name,
           "--conn", component.connection_name,
-            });
+        });
     }
 
     return {
       std::make_shared<ExternalComponentProcess>(
-                std::move(command), host, port, std::move(adapter_owners),
-                std::chrono::seconds(5), std::move(logger)),
+        std::move(command), host, port, std::move(adapter_owners),
+        std::chrono::seconds(5), std::move(logger)),
       std::move(instances),
     };
   }
@@ -137,39 +158,42 @@ public:
     runtime_client_context_(nullptr),
     adapter_clients_(std::move(adapter_clients)),
     logger_(logger ? std::move(logger) : std::make_shared<RppLogger>(
-              LoggerOptions{LogLevel::DEBUG, "rpp_external_runtime"}))
+        LoggerOptions{LogLevel::DEBUG, "rpp_external_runtime"}))
   {
     if (adapter_clients_.empty()) {
       throw std::invalid_argument(
-                "External component runtime requires an adapter client.");
+              "External component runtime requires an adapter client.");
     }
     process_.start();
     executor_.start();
     executor_started_ = true;
     RPP_LOG_DEBUG(*logger_, "Child process started; waiting for runtime.");
     try {
-      executor_.call([this, &host, port, startup_timeout](kj::AsyncIoContext & io) {
-          RPP_LOG_DEBUG(*logger_, "Connecting to runtime host=%s port=%d.",
-                              host.c_str(), port);
+      executor_.call(
+        [this, &host, port, startup_timeout](kj::AsyncIoContext & io) {
+          RPP_LOG_DEBUG(
+            *logger_, "Connecting to runtime host=%s port=%d.",
+            host.c_str(), port);
           runtime_client_context_ = std::make_unique<RppRuntimeClientContext>(
-                    host, port, startup_timeout, &io);
+            host, port, startup_timeout, &io);
           for (const auto & adapter_client : adapter_clients_) {
             if (!adapter_client->connect_adapter_client__(
-                            *runtime_client_context_, std::ref(executor_)))
+              *runtime_client_context_, std::ref(executor_)))
             {
               throw std::runtime_error(
-                            "Failed to connect external component adapter client.");
+                "Failed to connect external component adapter client.");
             }
           }
           runtime_client_ = std::make_unique<PluginRuntimeClient>(
-                    *runtime_client_context_, logger_);
+            *runtime_client_context_, logger_);
           RPP_LOG_DEBUG(*logger_, "Runtime connection established.");
-            });
+        });
     } catch (const kj::Exception & error) {
-      RPP_LOG_ERROR(*logger_, "Runtime connection failed: %s.",
-                          error.getDescription().cStr());
+      RPP_LOG_ERROR(
+        *logger_, "Runtime connection failed: %s.",
+        error.getDescription().cStr());
       throw std::runtime_error(
-                "Timed out connecting to external component server.");
+              "Timed out connecting to external component server.");
     }
   }
 
@@ -183,14 +207,15 @@ public:
     CallbackResult result;
     if (executor_started_) {
       try {
-        executor_.call([this](kj::AsyncIoContext &) {
+        executor_.call(
+          [this](kj::AsyncIoContext &) {
             adapter_clients_.clear();
             if (runtime_client_ != nullptr) {
               runtime_client_->shutdown();
               runtime_client_.reset();
             }
             runtime_client_context_.reset();
-                });
+          });
       } catch (const std::exception & error) {
         result = CallbackResult::failure(error.what());
       } catch (...) {

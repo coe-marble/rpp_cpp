@@ -1,4 +1,6 @@
 #include "rpp_cpp/rpp_paths.hpp"
+#include <cstdlib>
+#include <stdexcept>
 
 namespace rpp
 {

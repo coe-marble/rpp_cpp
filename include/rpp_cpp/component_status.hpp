@@ -2,7 +2,6 @@
 
 #include <stdexcept>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -44,11 +43,13 @@ struct DeactivationResult
   std::optional<State> state;
 };
 
-struct ComponentInfo
+/// Snapshot of one registered component's lifecycle and guarded-call status.
+struct ComponentStatus
 {
   std::string name;
   std::string component;
-  uint64_t generation = 0;
+  /// UUID of the currently loaded instance; empty when no instance is loaded.
+  std::string instance_id;
   LifecycleState state = LifecycleState::UNLOADED;
   std::optional<std::string> transition;
   CallbackResult last_result;

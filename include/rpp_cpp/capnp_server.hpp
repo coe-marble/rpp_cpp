@@ -1,7 +1,9 @@
 #pragma once
+#include <cstdint>
+#include <kj/vector.h>
+#include "adapter_bases.hpp"
 #include <memory>
 #include <string>
-#include <vector>
 #include <map>
 #include <kj/async-io.h>
 #include <capnp/rpc-twoparty.h>

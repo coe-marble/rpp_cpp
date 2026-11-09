@@ -1,4 +1,5 @@
 #include "rpp_cpp/data_model.hpp"
+#include <functional>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 

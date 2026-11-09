@@ -1,11 +1,15 @@
 #include "rpp_cpp/plugin_loader.hpp"
+#include <cassert>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <utility>
+#include <vector>
 #include "rpp_cpp/data_manager.hpp"
-#include "rpp_cpp/context_builder.hpp"
+#include "rpp_cpp/component_runtime_builder.hpp"
 #include "rpp_cpp/rpp_server_host.hpp"
 #include "rpp_cpp/logger.hpp"
 #include <iostream>
-#include <thread>
-#include <atomic>
 #include <string>
 #include <csignal>
 
@@ -107,12 +111,12 @@ int main(int argc, char ** argv)
   active_server_host = &server_host;
   std::signal(SIGINT, handle_interrupt);
   std::signal(SIGTERM, handle_interrupt);
-  rpp::ComponentContextBuilder context_builder(data_manager, rpp::ClockOptions{},
+  rpp::ComponentRuntimeBuilder runtime_builder(data_manager, rpp::ClockOptions{},
     allow_dynamic_components);
 
   std::cout << "Starting component server on " << host << ":" << port << std::endl;
 
-  std::vector<rpp::ComponentContextBuilder::ComponentRoot> roots;
+  std::vector<rpp::ComponentRuntimeBuilder::ComponentRoot> roots;
   roots.reserve(paths.size());
   for (size_t i = 0; i < paths.size(); ++i) {
     const auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
@@ -124,10 +128,10 @@ int main(int argc, char ** argv)
     roots.push_back({paths[i], plugin_names[i]});
   }
 
-  std::cout << "Building component contexts from roots." << std::endl;
+  std::cout << "Building component runtimes from roots." << std::endl;
 
-  auto contexts = context_builder.build_from_component_roots(roots);
-  auto cleanup_contexts = [&]() {
+  auto runtimes = runtime_builder.build_from_component_roots(roots);
+  auto cleanup_runtimes = [&]() {
       rpp::CallbackResult first_error;
       for (auto conn = conns.rbegin(); conn != conns.rend(); ++conn) {
         auto result = server_host.cleanup_component(*conn);
@@ -140,22 +144,22 @@ int main(int argc, char ** argv)
     };
   try {
     RPP_LOG_DEBUG(*logger, "Contexts built.");
-    for (size_t i = 0; i < contexts.size(); ++i) {
+    for (size_t i = 0; i < runtimes.size(); ++i) {
       const auto & conn = conns[i];
       auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
       assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
 
       std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
-      auto & context = contexts[i];
+      auto & runtime = runtimes[i];
       RPP_LOG_DEBUG(
         *logger, "Context prepared plugin=%s connection=%s.",
         plugin_names[i].c_str(), conn.c_str());
       auto server_adapter = rpp::load_plugin_adapter_server(
-        plugin_info, context.get_instance<rpp::Plugin>(),
+        plugin_info, runtime.get_instance<rpp::Plugin>(),
         conn + "_server", conn, "create_plugin_server", logger);
       std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
 
-      server_host.add_server(std::move(server_adapter), &context);
+      server_host.add_server(std::move(server_adapter), &runtime);
       RPP_LOG_DEBUG(
         *logger, "Adapter registered plugin=%s connection=%s.",
         plugin_names[i].c_str(), conn.c_str());
@@ -163,10 +167,10 @@ int main(int argc, char ** argv)
     RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
     server_host.run();
   } catch (...) {
-    cleanup_contexts();
+    cleanup_runtimes();
     active_server_host = nullptr;
     throw;
   }
   active_server_host = nullptr;
-  cleanup_contexts().require_success("on_cleanup");
+  cleanup_runtimes().require_success("on_cleanup");
 }

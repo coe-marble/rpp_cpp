@@ -1,6 +1,6 @@
 # C++ context construction and lifecycle
 
-This describes the current implementation. The slot refactor is not yet
+This describes the current implementation. The threading-policy refactor has not been
 validated by a build or test run. The native C++ path below is implemented;
 adapted activation and state handover remain unfinished.
 
@@ -8,18 +8,18 @@ adapted activation and state handover remain unfinished.
 
 ```cpp
 rpp::RppDataManager data_manager(rpp_home, workspace_path);
-rpp::ComponentContextBuilder builder(data_manager, rpp::ClockOptions{}, true);
-auto context = builder.build_script_from_path(script_path);
+rpp::ComponentRuntimeBuilder builder(data_manager, rpp::ClockOptions{}, true);
+auto runtime = builder.build_script_from_path(script_path);
 
-context.configure().require_success();
-context.activate_components().require_success();
-auto controller = context.get_component<Controller>("controller");
+runtime.configure().require_success();
+runtime.get_context().activate_subcomponents().require_success();
+auto controller = runtime.get_context().get_subcomponent<Controller>("controller");
 // The application calls controller-specific methods from its own loop.
-context.close().require_success();
+runtime.close().require_success();
 ```
 
 The builder's third argument is `allow_dynamic_components`, defaulting to false.
-Alternatively, use `ComponentContextBuilder(data_manager, policy, clock_options,
+Alternatively, use `ComponentRuntimeBuilder(data_manager, policy, clock_options,
 validators)`, where `policy(slot_name, ComponentSlot)` returns the permission.
 These are separate constructors; the builder resolves the selected permission policy.
 It is evaluated once for each slot, including declared empty slots. `ComponentSlot`
@@ -31,157 +31,105 @@ components. Neither permission mode is forwarded to external hosts by the builde
 The application does not create a slot manager. Building a context constructs
 objects and prepares transports; configuration and activation are separate calls.
 
-## Who does what
+## Responsibilities and construction
 
-| Class/function | Responsibility |
+| Type | Responsibility |
 | --- | --- |
-| `RppDataManager` | Resolve workspace paths and read component descriptions, script configurations, and registered plugin metadata on demand. |
-| `ComponentContextBuilder` | Assemble the tree: resolve records, load instances, load parameters, recursively build children, and create contexts. |
-| `load_cpp_plugin_from_shared_library` | Load the registered native library and call its factory to construct the plugin instance. |
-| `params::ParameterHandler` | Evaluate the component parameter file and combine its values with parameter declarations/defaults. |
-| `ComponentContext` | Expose parameters, components, child contexts, lifecycle, and slot operations to application/plugin code. |
-| `ComponentManager` | Own entries in one context slot and enforce admission, activation policy, transition state, generation checks, and guarded-call draining. |
+| `ComponentRuntimeBuilder` | Public construction facade. Assemble roots or a script slot collection with retained build settings. |
+| `ComponentConstructor<Threading>` | Resolve records and plugin metadata, prepare external hosts, load instances and parameters, and construct slots. |
+| `SlotManager` | Own entries in one single/option/list slot. Enforce admission, lifecycle state, selection, replacement and guarded-call draining. |
+| `ComponentRuntime` | Application lifecycle/administration handle. Retain a fixed root slot or directly own a script's slot collection. |
+| `ComponentContext` | Non-template view of services and subcomponent slots; no own-slot membership operations. |
+| `SubcomponentContext` | Non-template view of one registered subcomponent: activation/deactivation, identity and typed instance access. |
 
-`RppDataManager` construction stores locations; it does not create plugin
-instances. Builder construction stores the data-manager reference and build
-options; it does not start the component tree either. The data manager must
-outlive the build. Dynamic-loading callbacks retain their own data-manager copy
-so they do not depend on the original builder remaining alive.
-Each later load creates a builder from the saved settings. Capturing the original
-builder's pointer would be unsafe: it may have been a temporary destroyed as soon
-as the initial build returned. The builder gives the factory directly to each slot
-manager; the manager calls it when loading or replacing a component. Context
-constructors receive assembled managers and have no factory or policy arguments.
+For component roots, the builder submits one batch to `construct_components()`.
+The constructor resolves records and prepares non-native hosts together, then creates
+each component's data. Native components recursively create slot managers and admit
+their assigned subcomponents. An external host owns its subtree; its local proxy has
+no local descendant slots.
 
-## Building a component root
+The builder admits each root to a fixed exclusive slot with exactly one entry and
+no dynamic membership permission. Root lifecycle uses the same slot machinery as
+nested components. A component already assigned to a slot uses that slot's manager;
+there is no additional manager per candidate.
 
-The call starts at `ComponentContextBuilder::build_component_from_path(path)`:
+For scripts, the constructor reads the selected configuration, prepares transports,
+and constructs the assigned/declared slots. The runtime directly owns that collection
+and the services used by its context view. There is no script manager, plugin instance,
+component UUID or script lifecycle state machine.
 
-1. `make_component_node()` calls `resolve_component()`, which asks the data
-   manager to load the component record. Linked records are resolved to their
-   target. `get_plugin_info_from_lib()` reads its registered plugin metadata.
-2. `prepare_component_processes()` inspects the described tree. Purely native
-   C++ trees need no adapter process or RPC executor. Adapted nodes are prepared
-   through the external-process path described below.
-3. `build_for_component()` chooses native construction or an adapted proxy.
-4. For native C++, `build_native_component()` calls
-   `load_cpp_plugin_from_shared_library()`. The plugin constructor runs here.
-5. `ParameterHandler` loads and resolves that component's parameters. Its C++
-   implementation may evaluate a Python parameter file using an embedded
-   interpreter; that is separate from async/RPC hosting.
-6. The builder recursively calls `build_for_component()` for the described
-   subcomponents.
-7. `ComponentContextBuilder::make_slot_managers()` creates one `ComponentManager`
-   for each slot, including declared empty slots. The builder gives each manager
-   its factory, activation policy, dynamic permission, and admission rules, then
-   calls `adopt()` for each initial child context.
-8. The private `ComponentManager::adopt()` is called by the builder for initial
-   insertion. It checks the declared plugin type, runs the optional
-   registration validator, and commits the child as `UNCONFIGURED`. It sets the
-   child's non-owning link back to this slot manager.
-9. The builder constructs the `ComponentContext`, moving the resolved parameters
-   and assembled manager map into it alongside its plugin and optional host handle.
-   The context exposes these resources and delegates slot operations to managers.
-10. The root context is returned. The local map of prepared components is destroyed
-    automatically, including when a build throws. Returned contexts keep shared
-    ownership of the instances and host processes they need. The builder stores
-    no prepared components and needs no cleanup guard.
-
-The native parent plugin constructor runs before its children are built.
-Configuration visits children before their parent. Activation and deactivation
-are local to the plugin unless its callbacks explicitly manage child components.
-A constructor must not expect `on_configure(context)` to have run or the component
-tree to be available yet.
-
-```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Builder as ComponentContextBuilder
-    participant Data as RppDataManager
-    participant Loader as Native loader
-    participant Context as ComponentContext
-    participant Slot as ComponentManager per slot
-    App->>Builder: build_component_from_path(path)
-    Builder->>Data: load records and plugin metadata
-    Builder->>Loader: load_cpp_plugin_from_shared_library(info)
-    Loader-->>Builder: constructed plugin instance
-    Note over Builder: Resolve parameters and recursively build children
-    Builder->>Slot: create with factory, slot policy, permission, and validators
-    Builder->>Slot: adopt each initial child context
-    Note over Slot: Validate admission; state = UNCONFIGURED
-    Builder->>Context: construct with instance, parameters, and assembled managers
-    Builder-->>App: root context
-```
-
-## Building a script root
-
-`build_script_from_path()` resolves the script-description JSON through the
-data manager and delegates to `build_script_from_description_path()`.
-The builder reads the chosen configuration's component assignments, resolves
-their paths, builds those components, then constructs a script context with
-their slot managers.
-
-The script context has no plugin instance of its own. Building it does not run
-the script's C++ application code; it builds the components described for it.
+Each slot retains its constructor and shared build settings. Building never calls
+configuration or activation callbacks, and the builder may be destroyed after building.
+`construct_components()` remains the single component-construction path; later loads
+and reloads submit one request and initial assignments reuse their prepared host batch.
 
 ## Ownership and slot selection
 
 ```text
-root ComponentContext
-  ├── its plugin instance and parameters (component roots only)
-  └── slots
-      └── ComponentManager
-          ├── entry A → child ComponentContext → plugin instance and nested slots
-          └── entry B → child ComponentContext → plugin instance and nested slots
+component root runtime
+  └── fixed single SlotManager
+      └── component data
+          ├── plugin, parameters, logger, clock and context
+          └── subcomponent slot managers
+              └── component entries, recursively
+
+script runtime
+  └── script services and slot collection
+      └── SlotManager per assigned/declared slot
+          └── component entries, recursively
 ```
 
-Managers own child contexts through shared pointers. Each child keeps:
+Slots own component data with `unique_ptr`. A script runtime directly owns its
+collection data. No manager stores runtime objects: runtime snapshots are handles
+created on demand with a slot, registration name and instance UUID. They retain
+their slot, but do not prevent explicit unloading or replacement.
 
-- `owner_`: a weak pointer back to its owning manager, avoiding an ownership cycle.
-- `owner_name_`: its entry identifier in that slot, the workspace
-  component name for initial entries and the caller-supplied name for runtime loads.
+`ComponentContext` holds a non-owning reference to its data, with an internal
+variant for the two threading policies. The concrete context class is never
+templated. Component data identifies its owning slot and registration name;
+script collection data has no owning slot. Release detaches the context before
+its data can disappear, so retained subcomponent views reject stale access.
+Moves transfer handles or unique script storage without rebinding contexts.
 
-The identifier is not the plugin class name. Multiple component instances can
-use the same plugin implementation.
+A plugin can manage its subcomponents and request deferred self-deactivation.
+Its context does not expose loading, unloading, switching or replacement in the
+slot containing itself. Those membership decisions belong to the parent/application
+that controls that slot.
 
-Single `T` and `Option[T]` use the same exclusive manager policy. Their initial
-construction differs: one selected component versus a candidate collection.
-The current implementation initially selects the first admitted candidate.
-`List[T]` permits multiple active entries. Admission does not activate anything.
+Single `T` and `Option[T]` use exclusive activation; `List[T]` allows multiple active
+entries. Admission does not activate anything. The first admitted exclusive entry
+is initially selected. Initial single-slot cardinality is validated separately.
 
-Both static and dynamic trees use managers. With dynamic changes disabled,
-initial construction and ordinary lifecycle remain available; runtime membership
-changes, replacement, and selecting another exclusive candidate are rejected.
-The permission applies to managers created by the builder. External hosts are
-launched independently of this local decision.
+Dynamic permission is fixed per slot during construction and inherited through
+retained build settings for later descendants. Disabling it still permits initial
+admission and ordinary lifecycle, but rejects membership changes and selection of
+another exclusive candidate. Unloading a permitted parent may shut down its whole
+subtree even when nested slots forbid direct replacement. External hosts choose
+their own local policies.
 
-`allows_dynamic_components()` reports this instance's owning-slot permission;
-it does not inspect child slots. Unmanaged roots return false. The overload taking
-a slot name reports that child slot's permission. These permissions are independent:
-unloading a permitted parent may tear down its entire subtree, even when child
-slots forbid direct replacement. Ordinary activation/deactivation changes only
-the parent unless its callbacks explicitly manage children. A direct request to
-switch a child still checks that child's slot, and parent replacement does not
-change any child permissions.
+`runtime.allows_dynamic_components()` reports this handle's owning-slot permission;
+fixed roots and scripts return false. The overload taking a slot name reports that
+subcomponent slot's permission independently.
 
 ## Configuration and activation
 
-For a script root, `context.configure()` calls `configure_impl()` directly.
-For a child context, the public method uses `owner_` and `owner_name_` to call
-the owning manager instead. The manager checks the entry state, calls the
-child's private `configure_impl()`, and records `INACTIVE` on success.
+Component-root and subcomponent-runtime commands use the same owning-manager path.
+`runtime.configure()`, `activate()`, `deactivate()` and `cleanup()` forward to that
+manager, which validates state and transitions and executes the callback traversal.
+Script runtime commands traverse their slot collection and delegate to its slot managers.
+Runtime has no root-state enum, transition flag, plugin callback execution or rollback implementation.
 
-`configure_impl()` visits child contexts through their slot managers before
+`SlotManager::configure_component()` visits subcomponents through their slot managers before
 calling its own instance's `Plugin::configure(context)`, which dispatches
-`on_configure(context)`. A script root has no own callback. All registered
+`on_configure(ComponentContext)`. A script root has no own callback. All registered
 candidates are configured, including inactive option candidates.
 
 Activation/deactivation are local to the current plugin:
 
 ```text
-context.activate(state)
-  → owning ComponentManager::activate(entry), if managed
-  → ComponentContext::activate_impl(state)
+runtime.activate(state)
+  → owning SlotManager::activate(entry)
+  → SlotManager::activate_component(component, state)
   → Plugin::activate_state(state)
   → plugin.on_activate(optional_state)
   → manager marks ACTIVE on success
@@ -190,17 +138,19 @@ context.activate(state)
 `on_activate()` runs before the manager opens the active-call gate. For
 `deactivate()`, the manager first drains guarded calls, runs `on_deactivate()`, and
 marks the entry INACTIVE on success. The plugin chooses whether and when to invoke
-`context.activate_components()` or `context.deactivate_components()` from those
+`context.activate_subcomponents()` or `context.deactivate_subcomponents()` from those
 callbacks. Script roots have no plugin, so applications call the helpers directly;
 `activate()`/`deactivate()` on a script do not transition its assignments.
 
-The activation helper asks each manager to activate selected exclusive candidates
+Subcomponent lifecycle helpers live on `ComponentContext`. Applications reach them
+through `runtime.get_context()` using the same view supplied to plugins.
+These helpers ask each manager to activate selected exclusive candidates
 or all loaded list entries, without handover state. Only a failed helper call
 rolls back entries that it newly activated; previously active entries are preserved.
-If the helper succeeds but the parent callback later fails, child states remain
+If the helper succeeds but the parent callback later fails, subcomponent states remain
 under plugin control. Deactivation of contained components visits active entries
 in reverse order, continues after failures, and returns the first error without
-child handover snapshots. Each child's own callbacks independently decide whether
+subcomponent handover snapshots. Each subcomponent's own callbacks independently decide whether
 to transition its descendants. Neither helper changes dynamic permissions.
 
 No generic update loop starts. The application retains its timer/update loop.
@@ -211,27 +161,49 @@ No generic update loop starts. The application retains its timer/update loop.
 `get_logger()` and `get_clock()` return shared pointers to const objects. Logging
 and reading timestamps remain available; callers cannot mutate the clock through
 the context getter.
-`get_component<T>(slot)` asks the slot manager for its selected context and
-returns that context's plugin instance. `get_components<T>(slot)` returns the
+`get_subcomponent<T>(slot, component_name)` returns the named loaded instance.
+Without a name, single and option slots return their selected entry. A `List[T]`
+slot always requires a name, even when it has zero or one loaded entries; omission
+throws `LifecycleError`. Applications and plugins use this same context accessor. `get_subcomponents<T>(slot)` returns the
 loaded instances in that slot, including inactive candidates.
 
-`get_subcomponent_context(slot)` returns the selected context. Its two-name
-overload looks up a named entry. The plural method returns a snapshot of shared
-const context pointers. `list_subcomponents()` lists slot names, while
-`list_components(slot)` returns entry state/generation information.
+`runtime.get_context()` returns the manager-owned self view. Its
+`get_subcomponent_context(slot, component_name)` returns control of one named
+subcomponent; `get_subcomponent_contexts(slot)` snapshots shared subcomponent views.
+`list_subcomponents()` belongs to this context; application registration/state
+snapshots remain available through `runtime.get_subcomponent_statuses(slot)`.
 
-Calling lifecycle methods on a returned child context still routes through its
-manager. The child passes its own address as an expected-generation check, so
-an old retained context cannot operate on a replacement under the same name.
-This delegation is why the back-reference exists.
+`ComponentStatus::instance_id` is the loaded runtime's UUID, also exposed by
+`runtime.get_context().get_instance_id()` and the restricted subcomponent view. Component paths and
+slot-local registration names identify configuration/registration; the UUID
+identifies a particular loaded copy. Lifecycle transitions and moves preserve it.
+Reload creates a new UUID, and successful unload clears the entry's current ID.
+Multiple registrations of the same component path have distinct instance IDs;
+registration names are still unique within each slot.
 
-Friendship is one-way: `ComponentManager` can access context internals to bind
-ownership and run lifecycle implementations without delegating back to itself.
-`ComponentContext` uses manager methods for permission queries, guarded-call
-checks, and activation; it cannot access manager fields or locks. The manager's
-`activate_selected()` holds the slot mutation lock while selecting and activating
-entries, and returns newly activated contexts through a shared-pointer collection
-so the explicit activation helper can roll back only work it started.
+`with_active_component()` accepts an optional `expected_instance_id` string view.
+The check rejects replacement under the same registration name without copying
+the ID into every guarded call. The view is consumed synchronously and not retained.
+
+Subcomponent view lifecycle calls go directly to their manager. Registration name
+and instance UUID checks prevent an old retained view from operating on a replacement.
+
+Managers own transition checks, callback execution, shutdown, and subcomponent coordination.
+The constructor helper assembles prepared component data and subcomponent-slot managers.
+Runtime commands forward to manager operations. The concrete, non-template
+`ComponentContext` reads its data and delegates subcomponent operations to the
+corresponding slots. `SubcomponentContext` forwards lifecycle calls to the owning
+slot recorded in that component's data. Neither facade owns
+lifecycle bookkeeping. Both threading policies share these implementations.
+Lifecycle and membership changes run on one owning thread in both policies.
+Concurrent managers use one short-held slot gate for registry snapshots, admission,
+and guarded-call counts. No gate is held during callbacks or component construction; draining
+releases it while waiting. There are no thread-ID maps or lifecycle mutation locks.
+Single-threaded managers retain ordinary transition and local nesting checks.
+Validators cannot reenter membership changes; direct plugin calls remain unrestricted
+by slot admission and are governed by the plugin's own state and synchronization.
+The explicit activation helper records newly activated subcomponents to limit rollback
+to work started by that helper.
 
 For concurrent calls and transitions, use
 `with_active_component<T>(slot, entry, callback)`. It borrows the instance for
@@ -241,10 +213,11 @@ references must not be retained across unloading/replacement.
 For runtime loading, the call chain is:
 
 ```text
-context.load_component(slot, entry, component_path)
+runtime.load_component(slot, entry, component_path)
   → slot manager.load(...)
   → permission and entry-state checks
-  → builder-provided factory creates a fresh context tree
+  → manager delegates to its retained ComponentConstructor
+  → helper constructs component data using retained build settings
   → type/admission validation against registered entries
   → commit as UNCONFIGURED
 ```
@@ -270,10 +243,10 @@ Root `close()` deactivates its own plugin and explicitly stops remaining active
 descendants, including descendants under inactive parents. It then performs
 cleanup if configuration was attempted and releases runtime resources. Managed
 unload performs the same descendant shutdown before cleanup and release. This
-explicit teardown does not depend on plugin callbacks opting into child lifecycle.
-Teardown deactivation and cleanup visit parents before children and continue through
-independent children and reports failures. A failed lifecycle phase prevents
-destruction of the affected instance. Closing an individual borrowed child is
+explicit teardown does not depend on plugin callbacks opting into subcomponent lifecycle.
+Teardown deactivation and cleanup visit parents before subcomponents and continue through
+independent subcomponents and reports failures. A failed lifecycle phase prevents
+destruction of the affected instance. Closing an individual borrowed subcomponent is
 an unload request to its manager and obeys the dynamic-modification permission.
 
 Explicitly check `close()` results; destructor fallback does not replace
@@ -283,11 +256,14 @@ active code.
 
 ## Adapted components
 
-For an adapted node, the builder prepares `ExternalComponentProcess`, loads an
-adapter client, starts/connects the hosting process, and builds a local context
-around that proxy and its process owner. The host's builder constructs the real
-component tree. Configure/cleanup travel through `PluginRuntimeClient` and
+For an adapted node, the constructor helper prepares `ExternalComponentProcess`, loads an
+adapter client and starts/connects the hosting process. Runtime construction
+attaches that proxy and its process owner without creating local subcomponent slots.
+The host constructs the real component tree through its own runtime-builder facade. Configure/cleanup travel through `RpcControlClient` and
 `plugin_runtime.capnp` to the real context in that process.
+The C++ endpoint is `RpcControlService` in `rpc_control_service.hpp`. This is RPC
+control, separate from the owning `ComponentRuntime`. `PluginRuntime` remains the
+shared generated wire interface name for compatibility with Python consumers.
 
 Transport preparation during building is not plugin activation. Adapted
 activation/deactivation and state handover are still explicitly unsupported in
@@ -296,7 +272,66 @@ this increment. Native C++ trees create no RPC executor or external process.
 ## Source map
 
 - [RppDataManager](../include/rpp_cpp/data_manager.hpp)
-- [ComponentContextBuilder](../include/rpp_cpp/context_builder.hpp)
+- [ComponentRuntimeBuilder](../include/rpp_cpp/component_runtime_builder.hpp)
+- [ComponentRuntime facade](../include/rpp_cpp/runtime.hpp), [implementation](../src/runtime.cpp), and [internal component data](../include/rpp_cpp/component_data.hpp)
 - [ComponentContext interface](../include/rpp_cpp/context.hpp) and [implementation](../src/context.cpp)
-- [ComponentManager interface](../include/rpp_cpp/component_manager.hpp) and [implementation](../src/component_manager.cpp)
+- [SlotManager interface](../include/rpp_cpp/slot_manager.hpp) and [lifecycle implementation](../src/slot_manager.cpp)
+- [ComponentConstructor interface](../include/rpp_cpp/component_constructor.hpp) and [implementation](../src/component_constructor.cpp)
 - [Native plugin loader](../src/plugin_loader.cpp)
+
+## Plugin-facing context and threading selection
+
+Choose `ComponentRuntimeBuilder` for `SingleThreaded`, or
+`ConcurrentComponentRuntimeBuilder` for `Concurrent`. They alias
+`BasicComponentRuntimeBuilder<Threading>` and produce matching runtime and manager
+types throughout the tree, including later loads. The plugin-facing context is
+always the concrete, non-template `ComponentContext`, with a variant of non-owning
+references to component data for either threading policy.
+An empty optional invalidates a retained view after release; it is not shared state.
+
+`ComponentContext` is the plugin's own environment. It exposes services, `is_active()`,
+subcomponent-slot helpers and `request_deactivation()`, with no synchronous self activation
+or deactivation. Its subcomponent accessors return `SubcomponentContext`, which exposes
+synchronous `activate()` / `deactivate()`, `is_active()`, `get_instance_id()`, and
+`get_instance<T>()` for that subcomponent. Typed instance access validates its identity
+and rejects a released or replaced subcomponent; returned pointers acquire no lifecycle guard.
+It cannot access the subcomponent's parameters, logger, clock, or descendants. The subcomponent's
+own plugin controls its descendants through its own `ComponentContext`.
+Both views delegate; all lifecycle state and execution remain in managers.
+
+Self-deactivation records one flag in manager-owned component data (ordinary bool in single-threaded mode,
+atomic bool in concurrent mode). After application callbacks return, the application's
+lifecycle thread calls `runtime.process_deactivations(timeout)`. Processing traverses
+the tree and runs normal deactivation for flagged components. Concurrent processing
+closes admission and drains remaining guarded calls before the deactivation callback.
+Timeouts/failures retain pending work for retry; repeated submissions coalesce.
+There are no reasons, revisions, fault-recovery state, or locks in context.
+
+The safe point is explicit: direct plugin calls have no observable framework return
+boundary, and guard destructors do not run lifecycle callbacks. The processor and
+synchronous transitions must run on the owner thread outside affected guarded calls.
+Concurrent mode does not identify threads or detect self-waits. Single-threaded mode
+retains a local nesting check. Synchronous subcomponent control retains ordinary checks
+against reentering an in-progress lifecycle transition. Moves retain
+the self view identity and pending self-deactivation. Manager entries retain subcomponent
+views when the parent tree moves; roots allocate no subcomponent-control view. Release
+detaches the self view, so retained subcomponent handles cannot affect replacement instances.
+
+In single-threaded mode all framework access belongs to one thread. The policy has
+no mutex operations, atomics, condition variables, thread IDs, or concurrent counters.
+Local guard depth remains only for same-thread reentrancy. Plugins may manage their
+own workers and direct-call behavior independently of framework guards.
+
+Concurrent mode retains the same single lifecycle owner. Guarded worker calls can
+overlap lifecycle operations: one mutex and condition variable per slot protect
+lookup/admission and call counts. A transition closes admission before waiting;
+waiting releases the mutex, and callbacks and component construction never execute under it. Registry
+and metadata snapshots use that same gate. There are no per-entry locks, runtime
+operation locks, manager mutation locks, thread IDs, or thread-ID scans.
+
+Direct calls through plugin pointers can continue when a plugin is inactive. The
+plugin owns its state, resource validity, worker shutdown, and synchronization of
+those calls with lifecycle callbacks. Framework admission applies only to guarded
+slot calls. Guard managers must outlive their callbacks; destruction, moves and
+borrowed context access across release require lifetime coordination. Adapted hosts
+choose their own local policy.

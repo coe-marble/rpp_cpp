@@ -52,8 +52,10 @@ endif()
 
 add_library(rpp_cpp SHARED
   src/context.cpp
-  src/context_builder.cpp
-  src/component_manager.cpp
+  src/runtime.cpp
+  src/component_runtime_builder.cpp
+  src/slot_manager.cpp
+  src/component_constructor.cpp
   src/plugin_runtime.capnp.c++
   src/data_model.cpp
   src/parameter_handler.cpp
@@ -236,13 +238,30 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   target_include_directories(test_context_lifecycle PRIVATE include)
   target_link_libraries(test_context_lifecycle rpp_cpp)
 
-  ament_add_gtest(test_component_manager tests/test_component_manager.cpp)
-  target_include_directories(test_component_manager PRIVATE include)
-  target_link_libraries(test_component_manager rpp_cpp)
+  ament_add_gtest(test_slot_manager tests/test_slot_manager.cpp)
+  target_include_directories(test_slot_manager PRIVATE include)
+  target_link_libraries(test_slot_manager rpp_cpp)
 
-  ament_add_gtest(test_runtime_lifecycle tests/test_runtime_lifecycle.cpp)
-  target_include_directories(test_runtime_lifecycle PRIVATE include)
-  target_link_libraries(test_runtime_lifecycle rpp_cpp)
+  add_library(rpp_cpp_test_plugins SHARED tests/support/script_builder_plugin.cpp)
+  target_include_directories(rpp_cpp_test_plugins PRIVATE include)
+  target_link_libraries(rpp_cpp_test_plugins PRIVATE rpp_cpp)
+  set_target_properties(rpp_cpp_test_plugins PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+  ament_add_gtest(test_script_runtime_builder tests/test_script_runtime_builder.cpp)
+  target_include_directories(test_script_runtime_builder PRIVATE include)
+  target_link_libraries(test_script_runtime_builder rpp_cpp)
+  target_compile_definitions(test_script_runtime_builder PRIVATE
+    TEST_PLUGIN_LIBRARY="$<TARGET_FILE:rpp_cpp_test_plugins>"
+  )
+  add_dependencies(test_script_runtime_builder rpp_cpp_test_plugins)
+
+  ament_add_gtest(test_component_runtime_scenarios tests/test_component_runtime_scenarios.cpp)
+  target_include_directories(test_component_runtime_scenarios PRIVATE include)
+  target_link_libraries(test_component_runtime_scenarios rpp_cpp)
+
+  ament_add_gtest(test_rpc_control_service tests/test_rpc_control_service.cpp)
+  target_include_directories(test_rpc_control_service PRIVATE include)
+  target_link_libraries(test_rpc_control_service rpp_cpp)
 
   add_dependencies(test_rpp_cpp rpp_cpp)
   target_include_directories(test_rpp_cpp PRIVATE include

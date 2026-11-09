@@ -1,9 +1,10 @@
 #pragma once
+#include <cctype>
+#include <vector>
 
 #include <string>
 #include <map>
 #include <optional>
-#include <functional>
 #include <nlohmann/json_fwd.hpp>
 #include "parameter_description.hpp"
 

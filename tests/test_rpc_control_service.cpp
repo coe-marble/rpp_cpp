@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 
-#include "rpp_cpp/plugin_runtime.hpp"
+#include "rpp_cpp/rpc_control_service.hpp"
 
-TEST(RuntimeLifecycle, RpcAddressesRootsAndDoesNotRepeatCompletedCallbacks)
+TEST(RpcControlService, AddressesRootsAndDoesNotRepeatCompletedCallbacks)
 {
   auto io = kj::setupAsyncIo();
-  auto server = kj::heap<rpp::PluginRuntimeServer>();
+  auto server = kj::heap<rpp::RpcControlService>();
   int configured = 0, cleaned = 0, other_configured = 0;
   server->register_component(
     "first", [&]() {++configured; return rpp::CallbackResult{};},
@@ -36,9 +36,9 @@ TEST(RuntimeLifecycle, RpcAddressesRootsAndDoesNotRepeatCompletedCallbacks)
   EXPECT_EQ(cleaned, 1);
 }
 
-TEST(RuntimeLifecycle, CallbackExceptionAndCleanupFailureAllowExplicitRecovery)
+TEST(RpcControlService, CallbackExceptionAndCleanupFailureAllowExplicitRecovery)
 {
-  rpp::PluginRuntimeServer server;
+  rpp::RpcControlService server;
   int attempts = 0;
   bool fail_cleanup = true;
   server.register_component(

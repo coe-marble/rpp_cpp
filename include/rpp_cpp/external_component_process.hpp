@@ -1,4 +1,5 @@
 #pragma once
+#include <utility>
 
 #include <chrono>
 #include <cstdint>
@@ -7,7 +8,6 @@
 #include <map>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "adapter_bases.hpp"
@@ -16,7 +16,7 @@
 #include "data_model.hpp"
 #include "network_utils.hpp"
 #include "plugin_loader.hpp"
-#include "plugin_runtime.hpp"
+#include "rpc_control_service.hpp"
 #include "logger.hpp"
 
 namespace rpp
@@ -71,7 +71,7 @@ public:
   {
     return executor_.call(
       [this, &name](kj::AsyncIoContext &) {
-        return runtime_client_->configure_component(name);
+        return rpc_client_->configure_component(name);
       });
   }
 
@@ -79,7 +79,7 @@ public:
   {
     return executor_.call(
       [this, &name](kj::AsyncIoContext &) {
-        return runtime_client_->cleanup_component(name);
+        return rpc_client_->cleanup_component(name);
       });
   }
 
@@ -155,7 +155,7 @@ public:
     std::chrono::milliseconds startup_timeout = std::chrono::seconds(5),
     std::shared_ptr<RppLogger> logger = nullptr)
   : process_(std::move(command)),
-    runtime_client_context_(nullptr),
+    rpc_client_context_(nullptr),
     adapter_clients_(std::move(adapter_clients)),
     logger_(logger ? std::move(logger) : std::make_shared<RppLogger>(
         LoggerOptions{LogLevel::DEBUG, "rpp_external_runtime"}))
@@ -174,18 +174,18 @@ public:
           RPP_LOG_DEBUG(
             *logger_, "Connecting to runtime host=%s port=%d.",
             host.c_str(), port);
-          runtime_client_context_ = std::make_unique<RppRuntimeClientContext>(
+          rpc_client_context_ = std::make_unique<RppRuntimeClientContext>(
             host, port, startup_timeout, &io);
           for (const auto & adapter_client : adapter_clients_) {
             if (!adapter_client->connect_adapter_client__(
-              *runtime_client_context_, std::ref(executor_)))
+              *rpc_client_context_, std::ref(executor_)))
             {
               throw std::runtime_error(
                 "Failed to connect external component adapter client.");
             }
           }
-          runtime_client_ = std::make_unique<PluginRuntimeClient>(
-            *runtime_client_context_, logger_);
+          rpc_client_ = std::make_unique<RpcControlClient>(
+            *rpc_client_context_, logger_);
           RPP_LOG_DEBUG(*logger_, "Runtime connection established.");
         });
     } catch (const kj::Exception & error) {
@@ -210,11 +210,11 @@ public:
         executor_.call(
           [this](kj::AsyncIoContext &) {
             adapter_clients_.clear();
-            if (runtime_client_ != nullptr) {
-              runtime_client_->shutdown();
-              runtime_client_.reset();
+            if (rpc_client_ != nullptr) {
+              rpc_client_->shutdown();
+              rpc_client_.reset();
             }
-            runtime_client_context_.reset();
+            rpc_client_context_.reset();
           });
       } catch (const std::exception & error) {
         result = CallbackResult::failure(error.what());
@@ -249,10 +249,10 @@ private:
   ChildProcess process_;
   ComponentCallExecutor executor_;
   bool executor_started_ = false;
-  std::unique_ptr<RppRuntimeClientContext> runtime_client_context_;
+  std::unique_ptr<RppRuntimeClientContext> rpc_client_context_;
   std::vector<ClientAdapterOwner> adapter_clients_;
   std::shared_ptr<RppLogger> logger_;
-  std::unique_ptr<PluginRuntimeClient> runtime_client_;
+  std::unique_ptr<RpcControlClient> rpc_client_;
 };
 
 }  // namespace rpp

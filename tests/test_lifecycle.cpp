@@ -1,3 +1,5 @@
+#include "support/fake_plugins.hpp"
+#include <any>
 #include <gtest/gtest.h>
 
 #include <string>
@@ -7,29 +9,8 @@
 
 namespace
 {
-struct Estimate
-{
-  std::vector<double> position;
-};
-
-class Localizer : public rpp::LifecyclePlugin<Estimate>
-{
-public:
-  Estimate estimate;
-
-  rpp::CallbackResult on_activate(const std::optional<Estimate> & state) override
-  {
-    if (state) {
-      estimate = *state;
-    }
-    return {};
-  }
-
-  rpp::DeactivationResult<Estimate> on_deactivate() override
-  {
-    return {{}, estimate};
-  }
-};
+using Estimate = rpp::testing::SnapshotEstimate;
+using Localizer = rpp::testing::SnapshotLocalizer;
 }  // namespace
 
 TEST(PluginLifecycle, SnapshotSurvivesSourceAndInputMutation)
@@ -43,7 +24,7 @@ TEST(PluginLifecycle, SnapshotSurvivesSourceAndInputMutation)
     snapshot = *result.state;
     source.estimate.position.push_back(99.0);
   }
-  class AlternativeLocalizer : public Localizer {} target;
+  rpp::testing::AlternativeLocalizer target;
   ASSERT_TRUE(target.activate_state(snapshot).success);
   std::any_cast<Estimate &>(snapshot).position.push_back(100.0);
   EXPECT_EQ(target.estimate.position, (std::vector<double>{1.0, 2.0}));
@@ -61,29 +42,14 @@ TEST(PluginLifecycle, ColdActivationDoesNotSupplyDefaultState)
 
 TEST(PluginLifecycle, RejectsWrongStateType)
 {
-  class Guarded : public Localizer
-  {
-public:
-    bool called = false;
-    rpp::CallbackResult on_activate(const std::optional<Estimate> &) override
-    {
-      called = true;
-      return {};
-    }
-  } plugin;
+  rpp::testing::GuardedLocalizer plugin;
   EXPECT_FALSE(plugin.activate_state(std::string("wrong type")).success);
   EXPECT_FALSE(plugin.called);
 }
 
 TEST(PluginLifecycle, FailedDeactivationDoesNotExportSnapshot)
 {
-  class Failed : public Localizer
-  {
-    rpp::DeactivationResult<Estimate> on_deactivate() override
-    {
-      return {rpp::CallbackResult::failure("still updating"), Estimate{{1.0}}};
-    }
-  } plugin;
+  rpp::testing::FailedDeactivationLocalizer plugin;
   auto result = plugin.deactivate_state();
   EXPECT_FALSE(result.result.success);
   EXPECT_FALSE(result.state.has_value());
@@ -91,14 +57,7 @@ TEST(PluginLifecycle, FailedDeactivationDoesNotExportSnapshot)
 
 TEST(PluginLifecycle, StatelessCallbacksAndPayloadRejection)
 {
-  class Stateless : public rpp::LifecyclePlugin<void>
-  {
-public:
-    int activated = 0;
-    int deactivated = 0;
-    rpp::CallbackResult on_activate() override {++activated; return {};}
-    rpp::CallbackResult on_deactivate() override {++deactivated; return {};}
-  } plugin;
+  rpp::testing::Stateless plugin;
   rpp::Plugin & base = plugin;
   EXPECT_FALSE(base.activate_state(Estimate{}).success);
   EXPECT_EQ(plugin.activated, 0);
@@ -112,17 +71,7 @@ public:
 
 TEST(PluginLifecycle, CallbackFailuresAndExceptionsAreReported)
 {
-  class Failed : public Localizer
-  {
-    rpp::CallbackResult on_activate(const std::optional<Estimate> &) override
-    {
-      return rpp::CallbackResult::failure("state rejected");
-    }
-    rpp::DeactivationResult<Estimate> on_deactivate() override
-    {
-      throw std::runtime_error("still updating");
-    }
-  } plugin;
+  rpp::testing::FailingLifecycleLocalizer plugin;
   auto activation = plugin.activate_state();
   EXPECT_FALSE(activation.success);
   EXPECT_NE(activation.message.find("state rejected"), std::string::npos);

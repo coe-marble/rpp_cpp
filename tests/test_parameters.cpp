@@ -1,7 +1,12 @@
 #include "gtest/gtest.h"
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 #include "rpp_cpp/plugin.hpp"
-#include "rpp_cpp/data_model.hpp"
-#include "rpp_cpp/data_manager.hpp"
 #include "rpp_cpp/parameter_handler.hpp"
 
 

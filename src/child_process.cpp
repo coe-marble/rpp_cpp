@@ -1,15 +1,12 @@
 #include "rpp_cpp/child_process.hpp"
 
+#ifndef _WIN32
 #include <cerrno>
 #include <cstring>
 #include <thread>
-
-#ifndef _WIN32
 #include <csignal>
 #include <sys/wait.h>
 #include <unistd.h>
-#else
-#include <sstream>
 #endif
 
 namespace rpp

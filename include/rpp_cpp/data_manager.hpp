@@ -1,4 +1,7 @@
 #pragma once
+#include <cctype>
+#include <stdexcept>
+#include <utility>
 #include <algorithm>
 #include <filesystem>
 #include <string>

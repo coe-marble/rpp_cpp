@@ -1,24 +1,31 @@
+#include "support/runtime_test_helpers.hpp"
+#include <chrono>
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+#include <kj/async-io.h>
 #include "gtest/gtest.h"
 #include "rpp_cpp/plugin.hpp"
 #include "rpp_cpp/data_model.hpp"
-#include "rpp_cpp/cli_utils.hpp"
 #include "rpp_cpp/data_manager.hpp"
 #include "rpp_cpp/plugin_loader.hpp"
-#include "rpp_cpp/plugin_runtime.hpp"
+#include "rpp_cpp/rpc_control_service.hpp"
 #include "rpp_cpp/network_utils.hpp"
 #include "rpp_cpp/rpp_server_host.hpp"
-#include "rpp_cpp/context.hpp"
-#include "rpp_cpp/context_builder.hpp"
+#include "rpp_cpp/runtime.hpp"
+#include "rpp_cpp/component_runtime_builder.hpp"
 #include "rpp_cpp/child_process.hpp"
 #include "rpp_cpp/component_call_executor.hpp"
-#include "rpp_cpp/parameter_handler.hpp"
 
 #include "rpp_plugin_types/rpp_testing/MotionController2D.hpp"
 #include "rpp_plugin_types/rpp_testing/DisturbanceGenerator2D.hpp"
 #include "rpp_plugin_types/rpp_testing/TestInterfaceAll.hpp"
-#include <capnp/message.h>
-#include <capnp/serialize-packed.h>
-#include <capnp/ez-rpc.h>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <atomic>
@@ -166,23 +173,6 @@ std::string NativePluginTest::test_lib = "";
 std::string NativePluginTest::test_data_dir = "";
 std::string NativePluginTest::rpp_home_dir = "";
 bool NativePluginTest::initialization_successful = false;
-
-namespace rpp
-{
-
-class ComponentContextAccess final {
-public:
-  static ComponentContext with_logger_and_parameters(
-    std::shared_ptr<RppLogger> logger,
-    std::map<std::string, params::ParameterValue> parameters)
-  {
-    ComponentContext context(std::move(logger));
-    context.parameters_ = params::Parameters(std::move(parameters));
-    return context;
-  }
-};
-
-}  // namespace rpp
 
 class PythonAdapterTest : public NativePluginTest {};
 
@@ -365,9 +355,9 @@ TEST_F(NativePluginTest, TestSimpleInstancePlugin) {
 
     auto logger = std::make_shared<rpp::RppLogger>(
         rpp::LoggerOptions{rpp::LogLevel::DEBUG, "test_simple_instance_plugin"});
-    auto context = rpp::ComponentContextAccess::with_logger_and_parameters(
+    auto context = rpp::ComponentRuntimeAccess::with_logger_and_parameters(
         logger, {{"validate_threshold", 5.0}});
-    plugin->configure(context).require_success("on_configure");
+    plugin->configure(context.get_context()).require_success("on_configure");
 
     auto parameter_desc = rpp::load_cpp_plugin_parameters_description(plugin_info);
 
@@ -670,7 +660,7 @@ TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
             *context, std::ref(client_executor));
     }));
     auto runtime_client = client_executor.call([&](kj::AsyncIoContext &) {
-        return std::make_unique<rpp::PluginRuntimeClient>(*context);
+        return std::make_unique<rpp::RpcControlClient>(*context);
     });
 
 
@@ -707,7 +697,7 @@ TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
     ASSERT_TRUE(is_valid);
 }
 
-TEST_F(NativePluginTest, TestPluginRuntimeAdapterLocal)
+TEST_F(NativePluginTest, TestRpcControlServiceAdapterLocal)
 {
     std::string host = "127.0.0.1";
     uint16_t port = get_available_port();
@@ -753,7 +743,7 @@ TEST_F(NativePluginTest, TestPluginRuntimeAdapterLocal)
             *context, std::ref(client_executor));
     }));
     auto runtime_client = client_executor.call([&](kj::AsyncIoContext &) {
-        return std::make_unique<rpp::PluginRuntimeClient>(*context);
+        return std::make_unique<rpp::RpcControlClient>(*context);
     });
 
     client_executor.call([&](kj::AsyncIoContext &) {
@@ -804,21 +794,59 @@ RPP_PARAM_STRUCT(TestStruct2,
 )
 
 
-TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
+TEST_F(NativePluginTest, RuntimeConstructionAndReloadOutliveTheBuilderForBothPolicies)
+{
+  const auto check = [&](auto policy) {
+    using Threading = decltype(policy);
+    using Builder = rpp::BasicComponentRuntimeBuilder<Threading>;
+    SCOPED_TRACE(Threading::concurrent ? "Concurrent" : "SingleThreaded");
+    int admissions = 0;
+    typename Builder::RegistrationValidators validators;
+    validators["rpp_testing::MotionController2D"]["subcomponent1"] =
+      [&](const auto & candidate, const auto & registered) {
+        ++admissions;
+        return rpp::CallbackResult{registered.empty() &&
+          candidate.get_context().template get_parameter<float>("float_var") == 6.0f,
+          "Unexpected constructed child"};
+      };
+    auto runtime = [&] {
+      Builder builder(*NativePluginTest::data_manager, rpp::ClockOptions{}, true, validators);
+      return builder.build_component_from_path(NativePluginTest::test_data_dir + "/test_component_cpp");
+    }();  // All subsequent operations happen after the builder has been destroyed.
+    EXPECT_EQ(admissions, 1);
+    const auto initial = runtime.get_subcomponent_statuses("ctl1");
+    ASSERT_EQ(initial.size(), 1u);
+    EXPECT_EQ(initial.front().state, rpp::LifecycleState::UNCONFIGURED);
+    ASSERT_TRUE(runtime.configure().success);
+    const auto result = runtime.reload_component("ctl1", "subcomponent1");
+    ASSERT_TRUE(result.success) << result.message;
+    EXPECT_EQ(admissions, 2);
+    const auto reloaded = runtime.get_subcomponent_statuses("ctl1");
+    ASSERT_EQ(reloaded.size(), 1u);
+    EXPECT_NE(reloaded.front().instance_id, initial.front().instance_id);
+    EXPECT_EQ(reloaded.front().state, rpp::LifecycleState::INACTIVE);
+    EXPECT_EQ(rpp::ComponentRuntimeAccess::registered_component(runtime, "ctl1", "subcomponent1").get_context().template get_parameter<float>("float_var"), 6.0f);
+    EXPECT_TRUE(runtime.close().success);
+  };
+  check(rpp::SingleThreaded{});
+  check(rpp::Concurrent{});
+}
+
+TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
 {
     std::string component_folder = NativePluginTest::test_data_dir + "/test_component_cpp";
     bool validated = false;
-    rpp::ComponentContextBuilder::RegistrationValidators validators{
+    rpp::ComponentRuntimeBuilder::RegistrationValidators validators{
     {"rpp_testing::MotionController2D",
-      {{"subcomponent1", [&validated](const rpp::ComponentContext & candidate, const auto & registered) {
+      {{"subcomponent1", [&validated](const rpp::ComponentRuntime<> & candidate, const auto & registered) {
           validated = true;
           return rpp::CallbackResult{registered.empty() &&
-            candidate.get_parameter<float>("float_var") == 6.0f,
+            candidate.get_context().get_parameter<float>("float_var") == 6.0f,
             "Unexpected initial candidate"};
         }}}}
     };
 
-    auto context = rpp::ComponentContextBuilder(
+    auto context = rpp::ComponentRuntimeBuilder(
         *NativePluginTest::data_manager,
         [](const std::string & name, const rpp::ComponentSlot & type) {
           return name == "ctl1" && type.plugin_type == "rpp_testing::MotionController2D";
@@ -828,11 +856,11 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
     ASSERT_FALSE(context.allows_dynamic_components());
     ASSERT_TRUE(context.allows_dynamic_components("ctl1"));
 
-    auto subcomponent_list = context.list_subcomponents();
+    auto subcomponent_list = context.get_context().list_subcomponents();
     ASSERT_EQ(subcomponent_list.size(), 1);
     ASSERT_EQ(subcomponent_list[0], "ctl1");
 
-    auto subcomponent = context.get_component<rpp_testing::MotionController2D>("ctl1");
+    auto subcomponent = context.get_context().get_subcomponent<rpp_testing::MotionController2D>("ctl1");
 
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
@@ -844,16 +872,16 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
 
 
     // TEST DEFAULT PARAMETERS LOADED FROM JSON FILE
-    ASSERT_EQ(context.get_parameter<int>("int_var"), 1);
-    ASSERT_EQ(context.get_parameter<std::string>("str_var"), "test");
-    auto struct1 = context.get_parameter<TestStruct1>("struct1_var");
+    ASSERT_EQ(context.get_context().get_parameter<int>("int_var"), 1);
+    ASSERT_EQ(context.get_context().get_parameter<std::string>("str_var"), "test");
+    auto struct1 = context.get_context().get_parameter<TestStruct1>("struct1_var");
     ASSERT_EQ(struct1.width, 640);
     ASSERT_EQ(struct1.height, "480");
     ASSERT_DOUBLE_EQ(struct1.fps, 30.0);
 
     // TEST PARAMETERS OVERRIDDEN BY PYTHON MODULE
-    ASSERT_FLOAT_EQ(context.get_parameter<float>("float_var"), 10.0f);
-    auto struct2 = context.get_parameter<TestStruct2>("struct2_var");
+    ASSERT_FLOAT_EQ(context.get_context().get_parameter<float>("float_var"), 10.0f);
+    auto struct2 = context.get_context().get_parameter<TestStruct2>("struct2_var");
     ASSERT_EQ(struct2.struct1.width, 800);
     ASSERT_EQ(struct2.struct1.height, "500");
     ASSERT_DOUBLE_EQ(struct2.struct1.fps, 35.0);
@@ -864,12 +892,12 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
     ASSERT_EQ(struct2.values[3], 4);
     ASSERT_EQ(struct2.values[4], 5);
 
-    const auto & subcomponent_context = context.get_subcomponent_context("ctl1");
+    const auto & subcomponent_context = rpp::ComponentRuntimeAccess::registered_component(context, "ctl1", "subcomponent1");
     ASSERT_TRUE(subcomponent_context.allows_dynamic_components());
-    ASSERT_EQ(subcomponent_context.list_subcomponents().size(), 0);
+    ASSERT_EQ(subcomponent_context.get_context().list_subcomponents().size(), 0);
     // TEST PARAMETERS OF SUBCOMPONENT DEFAULT
-    ASSERT_EQ(subcomponent_context.get_parameter<float>("float_var"), 6.0f);
-    struct2 = subcomponent_context.get_parameter<TestStruct2>("struct2_var");
+    ASSERT_EQ(subcomponent_context.get_context().get_parameter<float>("float_var"), 6.0f);
+    struct2 = subcomponent_context.get_context().get_parameter<TestStruct2>("struct2_var");
     ASSERT_EQ(struct2.struct1.width, 641);
     ASSERT_EQ(struct2.struct1.height, "481");
     ASSERT_DOUBLE_EQ(struct2.struct1.fps, 31.0);
@@ -879,9 +907,9 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingContextBuilder)
     ASSERT_EQ(struct2.values[2], 4);
 
     // TEST PARAMETERS OF SUBCOMPONENT OVERRIDDEN BY PYTHON MODULE
-    ASSERT_EQ(subcomponent_context.get_parameter<int>("int_var"), 10);
-    ASSERT_EQ(subcomponent_context.get_parameter<std::string>("str_var"), "test10");
-    struct1 = subcomponent_context.get_parameter<TestStruct1>("struct1_var");
+    ASSERT_EQ(subcomponent_context.get_context().get_parameter<int>("int_var"), 10);
+    ASSERT_EQ(subcomponent_context.get_context().get_parameter<std::string>("str_var"), "test10");
+    struct1 = subcomponent_context.get_context().get_parameter<TestStruct1>("struct1_var");
     ASSERT_EQ(struct1.width, 800);
     ASSERT_EQ(struct1.height, "500");
     ASSERT_DOUBLE_EQ(struct1.fps, 35.0);
@@ -893,14 +921,20 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
     std::string component_folder = NativePluginTest::test_data_dir +
     "/test_component_cpp_with_python_subc";
 
-    auto context = rpp::ComponentContextBuilder(
+    auto context = rpp::ComponentRuntimeBuilder(
         *NativePluginTest::data_manager)
     .build_component_from_path(component_folder);
 
     context.configure().require_success("on_configure");
 
+    // The Python host owns the child's descendants. The local proxy exposes no fake local slots.
+    const auto subcomponent_runtimes =
+      rpp::ComponentRuntimeAccess::registered_components(context, "ctl_1");
+    ASSERT_EQ(subcomponent_runtimes.size(), 1u);
+    EXPECT_TRUE(subcomponent_runtimes.front()->get_context().list_subcomponents().empty());
+
     auto python_subcomponent =
-    context.get_component<rpp_testing::MotionController2D>("ctl_1");
+    context.get_context().get_subcomponent<rpp_testing::MotionController2D>("ctl_1");
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
     odom_msg.pose().position().y() = 2.0;

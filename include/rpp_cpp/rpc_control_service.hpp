@@ -1,4 +1,8 @@
 #pragma once
+#include <chrono>
+#include <exception>
+#include <string>
+#include <kj/debug.h>
 #include <vector>
 #include <kj/async-io.h>
 #include <functional>
@@ -7,17 +11,18 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <capnp/ez-rpc.h>
 #include "plugin_runtime.capnp.h"
 #include "adapter_bases.hpp"
 #include "logger.hpp"
-#include "lifecycle.hpp"
+#include "component_status.hpp"
 
 namespace rpp
 {
 
 
-class PluginRuntimeServer final : public runtime::PluginRuntime::Server
+// RPC control endpoint. ComponentRuntime owns the hosted component lifecycle;
+// the generated runtime::PluginRuntime name belongs to the shared wire schema.
+class RpcControlService final : public runtime::PluginRuntime::Server
 {
   using ServerAdapterPtr = std::shared_ptr<ServerAdapter>;
   using ServerAdapterMap = std::map<std::string, ServerAdapterPtr>;
@@ -40,9 +45,9 @@ class PluginRuntimeServer final : public runtime::PluginRuntime::Server
   }
 
 public:
-  explicit PluginRuntimeServer(std::shared_ptr<RppLogger> logger = nullptr)
+  explicit RpcControlService(std::shared_ptr<RppLogger> logger = nullptr)
   : logger_(logger ? std::move(logger) :
-      std::make_shared<RppLogger>("rpp_plugin_runtime_server"))
+      std::make_shared<RppLogger>("rpp_rpc_control_service"))
   {}
 
   void set_adapters(const ServerAdapterMap & adapters)
@@ -123,13 +128,13 @@ public:
 
   ::kj::Promise<void> ping(PingContext /* context*/) override
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime server received ping.");
+    RPP_LOG_DEBUG(*logger_, "RPC control service received ping.");
     return ::kj::READY_NOW;
   }
 
   ::kj::Promise<void> shutdown(ShutdownContext /* context */) override
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime server received shutdown request.");
+    RPP_LOG_DEBUG(*logger_, "RPC control service received shutdown request.");
     if (on_shutdown_callback_) {
       on_shutdown_callback_();
     }
@@ -138,7 +143,7 @@ public:
 
   ::kj::Promise<void> listAdapters(ListAdaptersContext context) override
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime server received listAdapters.");
+    RPP_LOG_DEBUG(*logger_, "RPC control service received listAdapters.");
     auto adapter_infos = context.getResults().initAdapters(adapters_->size());
     int index = 0;
     for (auto & [name, adapter] : *adapters_) {
@@ -158,7 +163,7 @@ public:
     std::string connection_name = context.getParams().getName();
     RPP_LOG_DEBUG(
       *logger_,
-      "Runtime server received getComponentCapability connection=%s.",
+      "RPC control service received getComponentCapability connection=%s.",
       connection_name.c_str());
     if (adapters_->find(connection_name) != adapters_->end()) {
       auto adapter = (*adapters_)[connection_name];
@@ -172,7 +177,7 @@ public:
 
 };
 
-class PluginRuntimeClient final
+class RpcControlClient final
 {
 private:
   const kj::AsyncIoContext & io_context_;
@@ -180,24 +185,24 @@ private:
   std::shared_ptr<RppLogger> logger_;
 
 public:
-  PluginRuntimeClient(
+  RpcControlClient(
     const RppRuntimeClientContext & context,
     std::shared_ptr<RppLogger> logger = nullptr)
   : io_context_(context.get_io_context()),
     backend_(context.get_client().castAs<rpp::runtime::PluginRuntime>()),
     logger_(logger ? std::move(logger) :
-      std::make_shared<RppLogger>("rpp_plugin_runtime_client"))
+      std::make_shared<RppLogger>("rpp_rpc_control_client"))
   {
     auto version = backend_.getProtocolVersionRequest().send().wait(io_context_.waitScope);
     if (version.getVersion() != runtime::PROTOCOL_VERSION) {
-      throw LifecycleError("Incompatible component runtime protocol version");
+      throw LifecycleError("Incompatible RPC control protocol version");
     }
-    RPP_LOG_DEBUG(*logger_, "Runtime client connected.");
+    RPP_LOG_DEBUG(*logger_, "RPC control client connected.");
   }
 
   void ping()
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime client calling ping.");
+    RPP_LOG_DEBUG(*logger_, "RPC control client calling ping.");
     backend_.pingRequest().send().wait(io_context_.waitScope);
   }
 
@@ -221,13 +226,13 @@ public:
 
   void shutdown()
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime client calling shutdown.");
+    RPP_LOG_DEBUG(*logger_, "RPC control client calling shutdown.");
     backend_.shutdownRequest().send().wait(io_context_.waitScope);
   }
 
   std::vector<rpp::ServerAdapterInfo> listAdapters()
   {
-    RPP_LOG_DEBUG(*logger_, "Runtime client calling listAdapters.");
+    RPP_LOG_DEBUG(*logger_, "RPC control client calling listAdapters.");
     auto request = backend_.listAdaptersRequest();
     auto response = request.send().wait(io_context_.waitScope);
     auto adapters = response.getAdapters();

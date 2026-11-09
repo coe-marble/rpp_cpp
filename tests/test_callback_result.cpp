@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "rpp_cpp/lifecycle.hpp"
+#include "rpp_cpp/component_status.hpp"
 
 TEST(CallbackResult, RequireSuccessAcceptsSuccessfulResult)
 {

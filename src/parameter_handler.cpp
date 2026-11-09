@@ -1,5 +1,5 @@
 #include "rpp_cpp/parameter_handler.hpp"
-#include <pybind11/pybind11.h>
+#include <vector>
 #include <pybind11/embed.h>
 
 namespace rpp::params

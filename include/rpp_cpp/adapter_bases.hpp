@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -6,7 +7,6 @@
 #include <chrono>
 #include <thread>
 #include <kj/async-io.h>
-#include "plugin_def.hpp"
 #include "adapter_info.hpp"
 #include <capnp/rpc-twoparty.h>
 

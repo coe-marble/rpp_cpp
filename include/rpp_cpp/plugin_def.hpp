@@ -1,7 +1,7 @@
 #pragma once
 
 #include <any>
-#include "lifecycle.hpp"
+#include "component_status.hpp"
 
 namespace rpp
 {
@@ -12,6 +12,7 @@ class Plugin {
 public:
   virtual ~Plugin() = default;
 
+  // Plugins receive the context facade; runtime and managers execute lifecycle operations.
   virtual CallbackResult on_configure(const ComponentContext &) {return {};}
   virtual CallbackResult on_cleanup() {return {};}
 

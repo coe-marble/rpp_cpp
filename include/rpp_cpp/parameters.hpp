@@ -1,12 +1,14 @@
 #pragma once
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 #include <string>
-#include <vector>
 #include <map>
 #include "parameter_description.hpp"
 
 namespace rpp
 {
-class ComponentContextAccess;
+class ComponentRuntimeAccess;
 }
 
 namespace rpp::params
@@ -15,7 +17,7 @@ namespace rpp::params
 class Parameters
 {
   friend class ParameterHandler;
-  friend class ::rpp::ComponentContextAccess;
+  friend class ::rpp::ComponentRuntimeAccess;
 
 private:
   Parameters(

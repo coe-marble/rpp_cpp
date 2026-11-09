@@ -1,14 +1,16 @@
 #pragma once
+#include <cstdint>
+#include <functional>
+#include <stdexcept>
 #include <atomic>
 #include <kj/async-io.h>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 #include "logger.hpp"
-#include "context.hpp"
-#include "plugin_runtime.hpp"
+#include "runtime.hpp"
+#include "rpc_control_service.hpp"
 #include "capnp_server.hpp"
 
 
@@ -23,7 +25,7 @@ private:
   uint16_t port_;
   kj::AsyncIoContext io_;
   std::map<std::string, std::shared_ptr<ServerAdapter>> adapters_;
-  kj::Own<PluginRuntimeServer> runtime_server_impl_;
+  kj::Own<RpcControlService> rpc_server_impl_;
   std::unique_ptr<runtime::CapnpServer> runtime_server_;
   std::atomic<bool> shutdown_requested_;
   std::shared_ptr<RppLogger> logger_;
@@ -35,26 +37,27 @@ public:
   : host_(host),
     port_(port),
     io_(kj::setupAsyncIo()),
-    runtime_server_impl_(kj::heap<PluginRuntimeServer>(logger)),
+    rpc_server_impl_(kj::heap<RpcControlService>(logger)),
     shutdown_requested_(false),
     logger_(logger ? std::move(logger) :
       std::make_shared<RppLogger>("rpp_server_host"))
   {
   }
 
+  template<bool Concurrent = false>
   void add_server(
     std::shared_ptr<ServerAdapter> adapter,
-    const ComponentContext * context = nullptr)
+    const ComponentRuntime<Concurrent> * runtime = nullptr)
   {
     std::string name = adapter->get_info_adapter_server__().connection_name;
     if (adapters_.count(name)) {
       throw std::invalid_argument("Duplicate runtime connection name: " + name);
     }
-    if (context) {
-      // The caller retains the context for the lifetime of this host.
-      runtime_server_impl_->register_component(
+    if (runtime) {
+      // The caller retains the runtime for the lifetime of this host.
+      rpc_server_impl_->register_component(
         name,
-        [context]() {return context->configure();}, [context]() {return context->cleanup();});
+        [runtime]() {return runtime->configure();}, [runtime]() {return runtime->cleanup();});
     }
     adapters_[name] = adapter;
     RPP_LOG_DEBUG(
@@ -65,7 +68,7 @@ public:
   kj::AsyncIoContext & get_io_context() {return io_;}
   CallbackResult cleanup_component(const std::string & name)
   {
-    return runtime_server_impl_->cleanup_component(name);
+    return rpc_server_impl_->cleanup_component(name);
   }
   const kj::AsyncIoContext & get_io_context() const {return io_;}
 
@@ -75,14 +78,14 @@ public:
       *logger_, "Starting runtime host host=%s port=%d adapters=%zu.",
       host_.c_str(), port_, adapters_.size());
     shutdown_requested_.store(false);
-    runtime_server_impl_->set_adapters(adapters_);
-    runtime_server_impl_->set_on_shutdown_callback(
+    rpc_server_impl_->set_adapters(adapters_);
+    rpc_server_impl_->set_on_shutdown_callback(
       [this]() {
         this->shutdown();
       });
 
     kj::Own<runtime::PluginRuntime::Server> owned_server(
-      static_cast<runtime::PluginRuntime::Server *>(runtime_server_impl_.get()),
+      static_cast<runtime::PluginRuntime::Server *>(rpc_server_impl_.get()),
       kj::NullDisposer::instance
     );
 

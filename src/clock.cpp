@@ -1,4 +1,5 @@
 #include "rpp_cpp/clock.hpp"
+#include <chrono>
 
 // Conditional compilation includes wrapped cleanly inside the header
 #if defined(RPP_USE_ROS2_LOGGING)

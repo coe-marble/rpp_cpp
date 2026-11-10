@@ -1,8 +1,9 @@
 #include "support/fake_plugins.hpp"
-#include <any>
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rpp_cpp/plugin_def.hpp"
@@ -11,23 +12,61 @@ namespace
 {
 using Estimate = rpp::testing::SnapshotEstimate;
 using Localizer = rpp::testing::SnapshotLocalizer;
+
+struct MoveOnlyEstimate
+{
+  explicit MoveOnlyEstimate(int value) : value(std::make_unique<int>(value)) {}
+  MoveOnlyEstimate(MoveOnlyEstimate &&) noexcept = default;
+  MoveOnlyEstimate & operator=(MoveOnlyEstimate &&) noexcept = default;
+  MoveOnlyEstimate(const MoveOnlyEstimate &) = delete;
+  MoveOnlyEstimate & operator=(const MoveOnlyEstimate &) = delete;
+  std::unique_ptr<int> value;
+};
+
+class MoveOnlyLocalizer final : public rpp::LifecyclePlugin<MoveOnlyEstimate>
+{
+public:
+  explicit MoveOnlyLocalizer(int value) : estimate(value) {}
+  MoveOnlyEstimate estimate;
+
+  rpp::CallbackResult on_activate(const std::optional<MoveOnlyEstimate> & state) override
+  {
+    if (state) {received = *state->value;}
+    return {};
+  }
+
+  rpp::DeactivationResult<MoveOnlyEstimate> on_deactivate() override
+  {return {{}, std::move(estimate)};}
+
+  int received = 0;
+};
 }  // namespace
 
 TEST(PluginLifecycle, SnapshotSurvivesSourceAndInputMutation)
 {
-  std::any snapshot;
+  rpp::HandoverState snapshot;
   {
     Localizer source;
     source.estimate.position = {1.0, 2.0};
     auto result = source.deactivate_state();
     ASSERT_TRUE(result.result.success);
-    snapshot = *result.state;
+    snapshot = std::move(*result.state);
     source.estimate.position.push_back(99.0);
   }
   rpp::testing::AlternativeLocalizer target;
-  ASSERT_TRUE(target.activate_state(snapshot).success);
-  std::any_cast<Estimate &>(snapshot).position.push_back(100.0);
+  ASSERT_TRUE(target.activate_state(std::move(snapshot)).success);
   EXPECT_EQ(target.estimate.position, (std::vector<double>{1.0, 2.0}));
+}
+
+TEST(PluginLifecycle, TransfersMoveOnlyStateWithoutCopying)
+{
+  MoveOnlyLocalizer source(17);
+  auto stopped = source.deactivate_state();
+  ASSERT_TRUE(stopped.result.success);
+  ASSERT_TRUE(stopped.state.has_value());
+  MoveOnlyLocalizer target(0);
+  ASSERT_TRUE(target.activate_state(std::move(*stopped.state)).success);
+  EXPECT_EQ(target.received, 17);
 }
 
 TEST(PluginLifecycle, ColdActivationDoesNotSupplyDefaultState)

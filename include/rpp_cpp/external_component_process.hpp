@@ -29,6 +29,7 @@ struct ExternalComponentSpec
   std::string component_path;
   PluginInfo plugin_info;
   std::string connection_name;
+  std::string slot_declaration;
 };
 
 class ExternalComponentProcessRegistry final
@@ -80,6 +81,62 @@ public:
     return executor_.call(
       [this, &name](kj::AsyncIoContext &) {
         return rpc_client_->cleanup_component(name);
+      });
+  }
+
+  CallbackResult activate_component(
+    const std::string & name, const ClientAdapter & adapter, HandoverState state)
+  {
+    return executor_.call(
+      [this, &name, &adapter, state = std::move(state)](kj::AsyncIoContext &) mutable {
+        return rpc_client_->activate_component(name, adapter, std::move(state));
+      });
+  }
+
+  DeactivationResult<HandoverState> deactivate_component(
+    const std::string & name, const ClientAdapter & adapter)
+  {
+    return executor_.call(
+      [this, &name, &adapter](kj::AsyncIoContext &) {
+        return rpc_client_->deactivate_component(name, adapter);
+      });
+  }
+
+  CallbackResult load_component(
+    const std::string & component_path, const std::string & plugin_name,
+    const std::string & connection_name)
+  {
+    return executor_.call(
+      [this, &component_path, &plugin_name, &connection_name](kj::AsyncIoContext &) {
+        return rpc_client_->load_component(component_path, plugin_name, connection_name);
+      });
+  }
+
+  CallbackResult unload_component(const std::string & instance_id)
+  {
+    return executor_.call(
+      [this, &instance_id](kj::AsyncIoContext &) {
+        return rpc_client_->unload_component(instance_id);
+      });
+  }
+
+  CallbackResult reload_component(const std::string & instance_id, bool transfer_state = false)
+  {
+    return executor_.call(
+      [this, &instance_id, transfer_state](kj::AsyncIoContext &) {
+        return rpc_client_->reload_component(instance_id, transfer_state);
+      });
+  }
+
+  CallbackResult switch_components(
+    const std::string & connection_name, const std::string & source_instance_id,
+    const std::string & target_instance_id, bool transfer_state = true)
+  {
+    return executor_.call(
+      [this, &connection_name, &source_instance_id, &target_instance_id, transfer_state](
+        kj::AsyncIoContext &) {
+        return rpc_client_->switch_components(
+          connection_name, source_instance_id, target_instance_id, transfer_state);
       });
   }
 
@@ -137,6 +194,12 @@ public:
           "--plugin", component.plugin_info.plugin_name,
           "--conn", component.connection_name,
         });
+      // Python hosts implement the shared control protocol but do not yet
+      // construct remotely managed slots. The C++ component server receives
+      // the declaration needed to construct a native-equivalent host slot.
+      if (to_lower_copy(language) == "cpp") {
+        command.insert(command.end(), {"--slot", component.slot_declaration});
+      }
     }
 
     return {

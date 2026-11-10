@@ -34,10 +34,12 @@ struct RuntimeBuilderReturnTypes
   using Script = rpp::ScriptRuntime<Threading::concurrent>;
 
   static_assert(std::is_same_v<
-      decltype(std::declval<Builder &>().build_component_from_path(std::declval<const std::string &>())),
+      decltype(std::declval<Builder &>().build_component(
+        std::declval<const rpp::ComponentRequest &>())),
       Component>);
   static_assert(std::is_same_v<
-      decltype(std::declval<Builder &>().build_script_from_path(std::declval<const std::string &>())),
+      decltype(std::declval<Builder &>().build_script(
+        std::declval<const rpp::ScriptRequest &>())),
       Script>);
 };
 
@@ -113,7 +115,8 @@ public:
     const json primary = {{"Id", "primary-id"}, {"PluginName", "tests::script_plugin"}};
     const json backup = {{"Id", "backup-id"}, {"PluginName", "tests::script_plugin"}};
     const json description = {
-      {"ScriptName", "tests::example"}, {"ScriptPath", script_path.string()},
+      {"ScriptLibrary", "tests"}, {"ScriptName", "tests::example"},
+      {"ScriptPath", script_path.string()},
       {"Language", "cpp"},
       {"Spec", {{"controller", "Option[tests::ScriptPlugin]"},
         {"unused", "List[tests::ScriptPlugin]"}}},
@@ -156,7 +159,7 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
   using Builder = typename TestFixture::Builder;
   auto runtime = [&] {
     Builder builder(*this->data_manager, rpp::ClockOptions{}, true);
-    return builder.build_script_from_path(this->script_path.string());
+    return builder.build_script({rpp::ScriptPath{this->script_path.string()}, {}, {}});
   }();  // The runtime and its slots must outlive the builder.
   const rpp::ComponentContext & context = runtime.get_context();
   EXPECT_EQ(context.list_subcomponents(), (std::vector<std::string>{"controller", "unused"}));
@@ -167,8 +170,8 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
   EXPECT_EQ(initial[1].name, "backup");
   EXPECT_NE(initial[0].instance_id, initial[1].instance_id);
   for (const auto & entry : initial) {EXPECT_EQ(entry.state, rpp::LifecycleState::UNCONFIGURED);}
-  auto primary = context.get_subcomponent<ScriptBuilderPlugin>("controller", "primary");
-  auto backup = context.get_subcomponent<ScriptBuilderPlugin>("controller", "backup");
+  auto primary = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller", "primary");
+  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller", "backup");
   EXPECT_EQ(primary->configure_calls, 0);
   EXPECT_EQ(backup->configure_calls, 0);
   EXPECT_EQ(primary->activate_calls, 0);
@@ -188,8 +191,8 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
   ASSERT_TRUE(runtime.switch_component("controller", "primary", "backup").success);
   EXPECT_EQ(primary->deactivate_calls, 1);
   EXPECT_EQ(backup->activate_calls, 1);
-  EXPECT_EQ(context.get_subcomponent<ScriptBuilderPlugin>("controller"), backup);
-  const auto backup_view = context.get_subcomponent_contexts("controller").back();
+  EXPECT_EQ(context.get_subcomponent_instance<ScriptBuilderPlugin>("controller"), backup);
+  const auto backup_view = context.enumerate_subcomponent_contexts("controller").back();
   EXPECT_TRUE(backup_view->is_active());
   ASSERT_TRUE(runtime.close().success);
   EXPECT_EQ(primary->deactivate_calls, 1);
@@ -206,14 +209,15 @@ TYPED_TEST(ScriptRuntimeBuilderTest, DescriptionPathUsesExplicitConfigurationAnd
   this->write_component(alternate_parts, "backup-id", "backup", 42);
   auto runtime = [&] {
     Builder builder(*this->data_manager);
-    return builder.build_script_from_description_path(
-      this->description_path.string(), "BackupOnly", alternate_parts.string());
+    return builder.build_script({
+      rpp::ScriptDescriptionPath{this->description_path.string()},
+      "BackupOnly", alternate_parts.string()});
   }();
   const auto entries = runtime.get_subcomponent_statuses("controller");
   ASSERT_EQ(entries.size(), 1u);
   EXPECT_EQ(entries.front().name, "backup");
   const rpp::ComponentContext & context = runtime.get_context();
-  auto backup = context.get_subcomponent<ScriptBuilderPlugin>("controller");
+  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller");
   ASSERT_TRUE(runtime.configure().success);
   EXPECT_EQ(backup->value, 42);
   ASSERT_TRUE(context.activate_subcomponents().success);
@@ -228,13 +232,14 @@ TYPED_TEST(ScriptRuntimeBuilderTest, LibraryLookupFindsScriptAndHonorsConfigurat
   using Builder = typename TestFixture::Builder;
   auto runtime = [&] {
     Builder builder(*this->data_manager);
-    return builder.build_script_from_library("tests", "tests::example", "BackupOnly");
+    return builder.build_script({
+      rpp::LibraryScript{"tests", "tests::example"}, "BackupOnly", {}});
   }();
   const auto entries = runtime.get_subcomponent_statuses("controller");
   ASSERT_EQ(entries.size(), 1u);
   EXPECT_EQ(entries.front().name, "backup");
   const rpp::ComponentContext & context = runtime.get_context();
-  auto backup = context.get_subcomponent<ScriptBuilderPlugin>("controller");
+  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller");
   ASSERT_TRUE(runtime.configure().success);
   EXPECT_EQ(backup->value, 20);
   ASSERT_TRUE(context.activate_subcomponents().success);

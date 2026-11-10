@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "runtime_fwd.hpp"
+#include "build_requests.hpp"
 #include "plugin_def.hpp"
 #include "clock.hpp"
 #include "data_model.hpp"
@@ -49,15 +50,7 @@ public:
     std::shared_ptr<ExternalComponentProcessRegistry> external_servers;
   };
 
-  struct ComponentBuildRequest
-  {
-    std::string name;
-    // Keep the referring path and resolution context across reloads of linked components.
-    std::string path;
-    std::string parent_path;
-    std::string plugin_name;
-  };
-  using SlotBuildRequests = std::map<std::string, std::vector<ComponentBuildRequest>>;
+  using SlotBuildRequests = std::map<std::string, std::vector<detail::ComponentBuildRequest>>;
   struct PreparedAdaptedComponent
   {
     std::shared_ptr<Plugin> instance;
@@ -69,12 +62,15 @@ public:
   explicit ComponentConstructor(std::shared_ptr<BuildOptions> options)
   : build_options_(std::move(options)) {}
 
+  ComponentRecord get_component_record(const detail::ComponentBuildRequest & request) const;
+  PluginInfo get_plugin_info(const ComponentRecord & record) const;
+
   static SlotManagers create_slots(
     const SlotBuildRequests & slot_build_requests, const std::map<std::string, std::string> & spec,
     const std::shared_ptr<BuildOptions> & options, const PreparedComponents & prepared,
     RuntimeFactory factory = {}, const std::map<std::string, Validator> & validators = {});
   std::vector<std::unique_ptr<ComponentData>> construct_components(
-    const std::vector<ComponentBuildRequest> & requests,
+    const std::vector<detail::ComponentBuildRequest> & requests,
     const PreparedComponents * prepared = nullptr) const;
   std::unique_ptr<ComponentData> build_script(
     const std::string & description_path, std::optional<std::string> configuration,
@@ -85,11 +81,10 @@ private:
   std::unique_ptr<ComponentData> construct_component(
     const ComponentRecord & record, const PluginInfo & plugin_info,
     const PreparedComponents & prepared) const;
-  ComponentRecord get_component_record(const ComponentBuildRequest & request) const;
   void discover_external_components(
-    const ComponentBuildRequest & request,
-    std::vector<ComponentBuildRequest> & external_components) const;
+    const detail::ComponentBuildRequest & request,
+    std::vector<detail::ComponentBuildRequest> & external_components) const;
   PreparedComponents prepare_processes_for_non_native_components(
-    const std::vector<ComponentBuildRequest> & requests) const;
+    const std::vector<detail::ComponentBuildRequest> & requests) const;
 };
 }  // namespace rpp

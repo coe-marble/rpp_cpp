@@ -5,29 +5,16 @@
 namespace rpp::params
 {
 
-
-static pybind11::scoped_interpreter & get_python_interpreter()
-{
-  static pybind11::scoped_interpreter guard{};
-  return guard;
-}
-static void ensure_python_interpreter()
-{
-  get_python_interpreter();
-}
-
 ParameterHandler::ParameterHandler(const std::string & component_path)
 : component_path_(component_path)
 {
-  ensure_python_interpreter();
+  rpp::ensure_python_interpreter();
 }
 
 ParameterHandler::~ParameterHandler()
 {
   close_python_module(
-        component_path_ + "/" + COMPONENT_PARAMS_PATH_PY,
-        get_python_interpreter()
-  );
+    component_path_ + "/" + COMPONENT_PARAMS_PATH_PY);
 }
 
 
@@ -71,10 +58,9 @@ void ParameterHandler::resolve_params(
 std::map<std::string, ParameterValue>
 ParameterHandler::load_parameters_from_python_module()
 {
+  pybind11::gil_scoped_acquire gil;
   pybind11::module_ params_module =
-    load_python_module(
-            component_path_ + "/" + COMPONENT_PARAMS_PATH_PY,
-            get_python_interpreter());
+    load_python_module(component_path_ + "/" + COMPONENT_PARAMS_PATH_PY);
   if (!pybind11::hasattr(params_module, "ComponentParameters")) {
     throw std::runtime_error("Class 'ComponentParameters' not found in the Python module.");
   }

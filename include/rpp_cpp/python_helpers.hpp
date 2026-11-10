@@ -4,7 +4,6 @@
 namespace pybind11
 {
 class module_;
-class scoped_interpreter;
 class handle;
 class dict;
 }
@@ -12,10 +11,13 @@ class dict;
 
 namespace rpp
 {
-pybind11::module_ load_python_module(
-  const std::string & module_path, pybind11::scoped_interpreter &);
+/// Initialize the process-wide embedded Python interpreter once.
+/// It intentionally remains alive until process exit so component threads can
+/// safely acquire the GIL throughout the runtime's lifetime.
+void ensure_python_interpreter();
 
-void close_python_module(
-  const std::string & module_path, pybind11::scoped_interpreter &);
+pybind11::module_ load_python_module(const std::string & module_path);
+
+void close_python_module(const std::string & module_path);
 
 } // namespace rpp

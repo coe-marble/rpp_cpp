@@ -1,5 +1,4 @@
 #pragma once
-#include <any>
 #include <memory>
 #include <vector>
 #include <stdexcept>
@@ -13,6 +12,7 @@
 #include <variant>
 
 #include "slot_manager.hpp"
+#include "handover_state.hpp"
 
 namespace rpp
 {
@@ -75,29 +75,38 @@ public:
   /// Share read-only access to the component clock.
   std::shared_ptr<const RppClock> get_clock() const;
 
-  /// Return a named subcomponent, or the selected entry in a single/option slot.
+  /// Return a direct native C++ instance from a named or selected subcomponent.
+  /// Adapted subcomponents do not expose their remote implementation pointer.
   /// List slots always require component_name, including when only one entry is loaded.
-  /// T must match its interface. Direct calls bypass slot admission and acquire no guard.
   template<typename T>
-  std::shared_ptr<T> get_subcomponent(
+  std::shared_ptr<T> get_subcomponent_instance(
     const std::string & slot_name, std::optional<std::string> component_name = std::nullopt) const;
 
-  /// Snapshot all loaded subcomponents in registration order, including inactive candidates.
-  /// T must match their interface; returned pointers do not acquire slot guards.
+  /// Snapshot direct native C++ instances in registration order.
+  /// Throws when any loaded subcomponent in the slot is adapted.
   template<typename T>
-  std::vector<std::shared_ptr<T>> get_subcomponents(const std::string & slot_name) const;
+  std::vector<std::shared_ptr<T>> enumerate_subcomponent_instances(const std::string & slot_name) const;
 
   /// List subcomponent slot names in sorted order, including declared empty slots.
   std::vector<std::string> list_subcomponents() const;
 
-  /// Borrow synchronous control of a named subcomponent in a slot; missing/unloaded entries throw.
+  /// Return whether the selected subcomponent is a direct native C++ instance.
+  /// List slots always require component_name; unloaded entries throw.
+  bool is_native_subcomponent(
+    const std::string & slot_name,
+    std::optional<std::string> component_name = std::nullopt) const;
+
+  /// Borrow lifecycle control of a named or selected subcomponent in a slot.
+  /// Adapted children forward lifecycle transitions to their remote host.
+  /// List slots always require component_name.
   /// Keep the reference within its view lifetime; retain a shared snapshot when needed.
   const SubcomponentContext & get_subcomponent_context(
-    const std::string & slot_name, const std::string & component_name) const;
+    const std::string & slot_name,
+    std::optional<std::string> component_name = std::nullopt) const;
 
   /// Snapshot loaded subcomponent views in registration order, including inactive entries.
   /// Shared views do not keep runtimes/plugins alive; access after detach throws.
-  std::vector<std::shared_ptr<const SubcomponentContext>> get_subcomponent_contexts(
+  std::vector<std::shared_ptr<const SubcomponentContext>> enumerate_subcomponent_contexts(
     const std::string & slot_name) const;
 
   /// Observe this component's current active state; this does not reserve future access.
@@ -140,10 +149,25 @@ public:
 class SubcomponentContext
 {
   template<class> friend class BasicSlotManager;
+  friend class ComponentContext;
   std::shared_ptr<const ComponentContext> context_;
 
   explicit SubcomponentContext(std::shared_ptr<const ComponentContext> context)
   : context_(std::move(context)) {}
+
+  template<typename T>
+  std::shared_ptr<T> get_native_instance() const
+  {
+    return context_->visit([](auto & component) {
+      if (!component.is_native_) {
+        throw LifecycleError(
+          "An adapted subcomponent does not expose a native C++ instance");
+      }
+      auto instance = std::static_pointer_cast<T>(component.instance_);
+      if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
+      return instance;
+    });
+  }
 
 public:
   /// Maximum wait for concurrent guarded calls; max() waits indefinitely.
@@ -155,7 +179,7 @@ public:
   /// Manager-owned subcomponent views cannot be reassigned.
   SubcomponentContext & operator=(const SubcomponentContext &) = delete;
 
-  /// Return this subcomponent's loaded plugin instance, including when inactive.
+  /// Return this subcomponent's loaded native instance or adapted client proxy.
   /// T must match its interface; the static cast does not check type compatibility.
   /// Throws LifecycleError after release/replacement. The pointer acquires no lifecycle guard.
   template<typename T>
@@ -171,14 +195,20 @@ public:
   /// Observe the subcomponent's active state without reserving a later transition.
   bool is_active() const {return context_->is_active();}
 
+  /// Return whether this view represents a direct native C++ component.
+  bool is_native() const
+  {
+    return context_->visit([](auto & component) {return component.is_native_;});
+  }
+
   /// Synchronously activate this subcomponent on the owner thread, optionally with handover state.
   /// Return the actual transition result; the manager validates its current state.
-  CallbackResult activate(const std::any & state = {}) const;
+  CallbackResult activate(HandoverState state = {}) const;
 
   /// Synchronously deactivate this subcomponent and return its optional handover state.
   /// Concurrent mode drains slot-guarded calls first; timeout does not bound plugin callbacks.
   /// Direct plugin pointers remain callable under the plugin's own state rules.
-  DeactivationResult<std::any> deactivate(Timeout timeout = Timeout::max()) const;
+  DeactivationResult<HandoverState> deactivate(Timeout timeout = Timeout::max()) const;
 
   /// Borrow the subcomponent instance UUID; copy it before retaining it beyond runtime release.
   const std::string & get_instance_id() const {return context_->get_instance_id();}
@@ -195,22 +225,25 @@ T ComponentContext::get_parameter(const std::string & name) const
 }
 
 template<typename T>
-std::shared_ptr<T> ComponentContext::get_subcomponent(
+std::shared_ptr<T> ComponentContext::get_subcomponent_instance(
   const std::string & slot_name, std::optional<std::string> component_name) const
 {
   return visit([&](auto & component) {
-    return std::static_pointer_cast<T>(
-      component.subcomponent_slot(slot_name).subcomponent_instance(component_name));
+    return component.subcomponent_slot(slot_name).subcomponent_context(component_name)->
+      template get_native_instance<T>();
   });
 }
 
 template<typename T>
-std::vector<std::shared_ptr<T>> ComponentContext::get_subcomponents(const std::string & slot_name) const
+std::vector<std::shared_ptr<T>> ComponentContext::enumerate_subcomponent_instances(
+  const std::string & slot_name) const
 {
   return visit([&](auto & component) {
     std::vector<std::shared_ptr<T>> instances;
-    for (const auto & instance : component.subcomponent_slot(slot_name).subcomponent_instances()) {
-      instances.push_back(std::static_pointer_cast<T>(instance));
+    for (const auto & subcomponent :
+      component.subcomponent_slot(slot_name).subcomponent_contexts())
+    {
+      instances.push_back(subcomponent->template get_native_instance<T>());
     }
     return instances;
   });

@@ -1,8 +1,7 @@
-#include "rpp_cpp/plugin_loader.hpp"
-#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <map>
 #include <utility>
 #include <vector>
 #include "rpp_cpp/data_manager.hpp"
@@ -39,6 +38,7 @@ int main(int argc, char ** argv)
   uint16_t port = 8080;
   std::vector<std::string> paths;
   std::vector<std::string> conns;
+  std::vector<std::string> slot_declarations;
   std::vector<std::string> plugin_names;
   bool allow_dynamic_components = false;
 
@@ -87,17 +87,22 @@ int main(int argc, char ** argv)
       std::string connection_name = argv[++i];
       conns.push_back(connection_name);
     }
+    if (arg == "--slot" && i + 1 < argc) {
+      slot_declarations.push_back(argv[++i]);
+    }
   }
 
-  if (paths.empty() || conns.empty() || plugin_names.empty()) {
+  if (paths.empty() || conns.empty() || plugin_names.empty() || slot_declarations.empty()) {
     std::cerr <<
-      "Error: Missing required arguments. Please provide --path, --conn, and --plugin." <<
+      "Error: Missing required arguments. Please provide --path, --plugin, --conn, and --slot." <<
       std::endl;
     return 1;
   }
 
-  if (paths.size() != conns.size() || paths.size() != plugin_names.size()) {
-    std::cerr << "Error: The number of --path, --conn, and --plugin arguments must be the same." <<
+  if (paths.size() != conns.size() || paths.size() != plugin_names.size() ||
+    paths.size() != slot_declarations.size())
+  {
+    std::cerr << "Error: The number of --path, --plugin, --conn, and --slot arguments must be the same." <<
       std::endl;
     return 1;
   }
@@ -107,8 +112,6 @@ int main(int argc, char ** argv)
     host.c_str(), port, rpp::RPP_HOME.c_str(), paths.size());
 
   rpp::RppDataManager data_manager(rpp::RPP_HOME);
-  rpp::RppServerHost server_host(host, port, logger);
-  active_server_host = &server_host;
   std::signal(SIGINT, handle_interrupt);
   std::signal(SIGTERM, handle_interrupt);
   rpp::ComponentRuntimeBuilder runtime_builder(data_manager, rpp::ClockOptions{},
@@ -116,61 +119,34 @@ int main(int argc, char ** argv)
 
   std::cout << "Starting component server on " << host << ":" << port << std::endl;
 
-  std::vector<rpp::ComponentRuntimeBuilder::ComponentRoot> roots;
-  roots.reserve(paths.size());
+  rpp::ComponentServerRequest request;
+  request.host = host;
+  request.port = port;
+  request.logger = logger;
+  std::map<std::string, size_t> slot_indices;
   for (size_t i = 0; i < paths.size(); ++i) {
-    const auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
-    if (!rpp::is_cpp_source_language(plugin_info)) {
-      std::cerr << "Error: component_server_cpp can only host C++ root components: "
-                << plugin_names[i] << std::endl;
+    auto [slot, inserted] = slot_indices.try_emplace(conns[i], request.slots.size());
+    if (inserted) {
+      request.slots.push_back({conns[i], slot_declarations[i], {}});
+    }
+    auto & slot_request = request.slots[slot->second];
+    if (slot_request.declaration != slot_declarations[i]) {
+      std::cerr << "Error: A connection must use one slot declaration: " << conns[i] << std::endl;
       return 1;
     }
-    roots.push_back({paths[i], plugin_names[i]});
+    slot_request.components.push_back({paths[i], plugin_names[i]});
   }
 
-  std::cout << "Building component runtimes from roots." << std::endl;
-
-  auto runtimes = runtime_builder.build_from_component_roots(roots);
-  auto cleanup_runtimes = [&]() {
-      rpp::CallbackResult first_error;
-      for (auto conn = conns.rbegin(); conn != conns.rend(); ++conn) {
-        auto result = server_host.cleanup_component(*conn);
-        if (!result.success) {
-          RPP_LOG_ERROR(*logger, "Component cleanup failed: %s", result.message.c_str());
-          if (first_error.success) {first_error = result;}
-        }
-      }
-      return first_error;
-    };
+  std::cout << "Building host-owned component slots." << std::endl;
   try {
-    RPP_LOG_DEBUG(*logger, "Contexts built.");
-    for (size_t i = 0; i < runtimes.size(); ++i) {
-      const auto & conn = conns[i];
-      auto plugin_info = data_manager.get_plugin_info_from_lib(plugin_names[i]);
-      assert(!plugin_info.plugin_name.empty() && "Plugin not found in the registry.");
-
-      std::cout << "Building component: " << plugin_info.plugin_name << std::endl;
-      auto & runtime = runtimes[i];
-      RPP_LOG_DEBUG(
-        *logger, "Context prepared plugin=%s connection=%s.",
-        plugin_names[i].c_str(), conn.c_str());
-      auto server_adapter = rpp::load_plugin_adapter_server(
-        plugin_info, runtime.get_instance<rpp::Plugin>(),
-        conn + "_server", conn, "create_plugin_server", logger);
-      std::cout << "Starting server adapter for plugin: " << plugin_info.plugin_name << std::endl;
-
-      server_host.add_server(std::move(server_adapter), &runtime);
-      RPP_LOG_DEBUG(
-        *logger, "Adapter registered plugin=%s connection=%s.",
-        plugin_names[i].c_str(), conn.c_str());
-    }
+    auto server_host = runtime_builder.build_component_server(request);
+    active_server_host = server_host.get();
     RPP_LOG_DEBUG(*logger, "Entering server host host=%s port=%d.", host.c_str(), port);
-    server_host.run();
+    server_host->run();
+    server_host->close().require_success("on_cleanup");
   } catch (...) {
-    cleanup_runtimes();
     active_server_host = nullptr;
     throw;
   }
   active_server_host = nullptr;
-  cleanup_runtimes().require_success("on_cleanup");
 }

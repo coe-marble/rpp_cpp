@@ -16,6 +16,8 @@
 
 namespace rpp
 {
+using detail::ComponentBuildRequest;
+
 // One slot-construction operation: declare the slot, then let its manager
 // construct and admit each initial entry through the ordinary load path.
 template<class Threading>
@@ -88,6 +90,12 @@ ComponentRecord ComponentConstructor<Threading>::get_component_record(
 }
 
 template<class Threading>
+PluginInfo ComponentConstructor<Threading>::get_plugin_info(const ComponentRecord & record) const
+{
+  return build_options_->data->get_plugin_info_from_lib(record.plugin_name);
+}
+
+template<class Threading>
 void ComponentConstructor<Threading>::discover_external_components(
   const ComponentBuildRequest & request,
   std::vector<ComponentBuildRequest> & external_components) const
@@ -99,11 +107,13 @@ void ComponentConstructor<Threading>::discover_external_components(
     return;
   }
   for (const auto & [slot_name, subcomponents] : record.subcomponents) {
-    (void)slot_name;
+    const auto declaration = record.subcomponent_spec.at(slot_name);
     for (const auto & subcomponent : subcomponents) {
-      discover_external_components(
-        {"", build_options_->data->get_subcomponent_folder_path(record.folder, subcomponent.id),
-          record.folder, subcomponent.plugin_name}, external_components);
+      ComponentBuildRequest child{
+        "", build_options_->data->get_subcomponent_folder_path(record.folder, subcomponent.id),
+        record.folder, subcomponent.plugin_name, {}};
+      child.slot_declaration = declaration;
+      discover_external_components(child, external_components);
     }
   }
 }
@@ -127,7 +137,8 @@ ComponentConstructor<Threading>::prepare_processes_for_non_native_components(
       throw std::runtime_error("Duplicate adapted component connection name '" + connection_name + "'.");
     }
     groups[to_lower_copy(plugin_info.source_language)].push_back(
-      {record.folder, plugin_info, connection_name});
+      {record.folder, plugin_info, connection_name,
+        request.slot_declaration.empty() ? record.plugin_type : request.slot_declaration});
   }
 
   PreparedComponents prepared_components;
@@ -173,14 +184,16 @@ std::unique_ptr<detail::ComponentData<Threading>> ComponentConstructor<Threading
       auto & entries = slot_build_requests[slot];
       for (const auto & assignment : assignments) {
         const auto path = build_options_->data->get_subcomponent_folder_path(record.folder, assignment.id);
-        entries.push_back({"", path, record.folder, assignment.plugin_name});
+        ComponentBuildRequest child{"", path, record.folder, assignment.plugin_name, {}};
+        child.slot_declaration = record.subcomponent_spec.at(slot);
+        entries.push_back(std::move(child));
       }
     }
     slot_managers = create_slots(slot_build_requests, record.subcomponent_spec, build_options_, prepared);
   }
   // An external host owns its subcomponent tree. Its local proxy has no subcomponent managers.
   auto component = std::make_unique<ComponentData>(std::move(instance), std::move(*parameters),
-    std::move(process), std::move(slot_managers), build_options_->clock);
+    std::move(process), std::move(slot_managers), build_options_->clock, native);
   component->component_name_ = record.name;
   component->component_reference_ = record.folder;
   component->plugin_type_ = record.plugin_type;
@@ -223,7 +236,8 @@ std::unique_ptr<detail::ComponentData<Threading>> ComponentConstructor<Threading
     for (const auto & component : components) {
       const auto path = data.get_component_path_in_parts_folder(
         folder, component.plugin_name, component.id);
-      ComponentBuildRequest request{"", path, path, component.plugin_name};
+      ComponentBuildRequest request{"", path, path, component.plugin_name, {}};
+      request.slot_declaration = description.spec.at(slot);
       request.name = get_component_record(request).name;
       entries.push_back(request);
       requests.push_back(std::move(request));
@@ -231,16 +245,18 @@ std::unique_ptr<detail::ComponentData<Threading>> ComponentConstructor<Threading
   }
   auto prepared = prepare_processes_for_non_native_components(requests);
   return std::make_unique<ComponentData>(nullptr, params::Parameters{}, nullptr,
-    create_slots(slot_build_requests, description.spec, build_options_, prepared), build_options_->clock);
+    create_slots(slot_build_requests, description.spec, build_options_, prepared),
+    build_options_->clock, false);
 }
 
 template<class Threading>
 detail::ComponentData<Threading>::ComponentData(std::shared_ptr<Plugin> instance,
   params::Parameters parameters, std::shared_ptr<ExternalComponentProcess> process,
-  SlotManagers slots, const ClockOptions & clock_options)
+  SlotManagers slots, const ClockOptions & clock_options, bool is_native)
 : parameters_(std::move(parameters)), subcomponent_slots_(std::move(slots)),
-  instance_id_(instance ? create_instance_id() : std::string{}), external_component_process_(std::move(process)),
-  instance_(std::move(instance)), logger_(std::make_shared<RppLogger>()),
+  instance_id_(instance ? create_instance_id() : std::string{}), is_native_(is_native),
+  external_component_process_(std::move(process)), instance_(std::move(instance)),
+  logger_(std::make_shared<RppLogger>()),
   clock_(ClockFactory::create_clock(clock_options))
 {}
 

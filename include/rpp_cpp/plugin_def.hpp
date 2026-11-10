@@ -1,7 +1,7 @@
 #pragma once
 
-#include <any>
 #include "component_status.hpp"
+#include "handover_state.hpp"
 
 namespace rpp
 {
@@ -29,17 +29,17 @@ public:
 
   // Internal dispatch entry points; typed callbacks live on LifecyclePlugin.
   virtual const std::type_info & handover_state_type() const {return typeid(void);}
-  virtual CallbackResult validate_handover_state(const std::any &) const
+  virtual CallbackResult validate_handover_state(const HandoverState &) const
   {
     return CallbackResult::failure("Plugin does not implement lifecycle activation");
   }
 
-  virtual CallbackResult activate_state(const std::any & = {})
+  virtual CallbackResult activate_state(HandoverState = {})
   {
     return CallbackResult::failure("Plugin does not implement lifecycle activation");
   }
 
-  virtual DeactivationResult<std::any> deactivate_state()
+  virtual DeactivationResult<HandoverState> deactivate_state()
   {
     return {CallbackResult::failure("Plugin does not implement lifecycle deactivation"), {}};
   }
@@ -66,36 +66,37 @@ public:
   virtual CallbackResult on_activate(const std::optional<State> & state) = 0;
   virtual DeactivationResult<State> on_deactivate() = 0;
 
-  CallbackResult validate_handover_state(const std::any & state) const final
+  CallbackResult validate_handover_state(const HandoverState & state) const final
   {
-    if (state.has_value() && state.type() != typeid(State)) {
+    if (state.has_value() && !state.holds<State>()) {
       return CallbackResult::failure("on_activate received an incompatible handover state");
     }
     return {};
   }
 
-  CallbackResult activate_state(const std::any & state = {}) final
+  CallbackResult activate_state(HandoverState state = {}) final
   {
     auto validation = validate_handover_state(state);
     if (!validation.success) {return validation;}
     return invoke_lifecycle("on_activate", [&]() {
-               const auto owned = state.has_value() ?
-               std::optional<State>(std::any_cast<const State &>(state)) : std::nullopt;
+               std::optional<State> owned;
+               if (state.has_value()) {owned.emplace(std::move(state).template take<State>());}
                return on_activate(owned);
     });
   }
 
-  DeactivationResult<std::any> deactivate_state() final
+  DeactivationResult<HandoverState> deactivate_state() final
   {
-    std::optional<std::any> snapshot;
+    std::optional<HandoverState> snapshot;
     auto result = invoke_lifecycle("on_deactivate", [&]() {
-          const auto deactivation = on_deactivate();
+          auto deactivation = on_deactivate();
           if (deactivation.result.success && deactivation.state) {
-            snapshot.emplace(*deactivation.state);
+            snapshot.emplace(std::move(*deactivation.state));
           }
           return deactivation.result;
     });
-    return {result, result.success ? std::move(snapshot) : std::nullopt};
+    if (!result.success) {snapshot.reset();}
+    return {std::move(result), std::move(snapshot)};
   }
 };
 
@@ -106,7 +107,7 @@ public:
   virtual CallbackResult on_activate() {return {};}
   virtual CallbackResult on_deactivate() {return {};}
 
-  CallbackResult validate_handover_state(const std::any & state) const final
+  CallbackResult validate_handover_state(const HandoverState & state) const final
   {
     if (state.has_value()) {
       return CallbackResult::failure("on_activate accepts no state");
@@ -114,14 +115,14 @@ public:
     return {};
   }
 
-  CallbackResult activate_state(const std::any & state = {}) final
+  CallbackResult activate_state(HandoverState state = {}) final
   {
     auto validation = validate_handover_state(state);
     if (!validation.success) {return validation;}
     return invoke_lifecycle("on_activate", [&]() {return on_activate();});
   }
 
-  DeactivationResult<std::any> deactivate_state() final
+  DeactivationResult<HandoverState> deactivate_state() final
   {
     return {invoke_lifecycle("on_deactivate", [&]() {return on_deactivate();}), {}};
   }

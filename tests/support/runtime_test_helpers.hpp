@@ -48,7 +48,7 @@ public:
         // construction, without exposing a second initialization/factory API.
         const auto & name = runtime.component_data().component_name_;
         const auto path = slot + "/" + name;
-        initial.push_back({name, path, path, ""});
+        initial.push_back({name, path, path, "", {}});
         pending->emplace(path, std::make_shared<Runtime<Threading>>(std::move(runtime)));
       }
     }
@@ -80,7 +80,7 @@ public:
     slots.emplace("children", std::move(children));
     auto data = std::make_unique<detail::ComponentData<Threading>>(
       std::move(instance), params::Parameters{}, nullptr,
-      assemble_test_slots<Threading>(std::move(slots)), ClockOptions{});
+      assemble_test_slots<Threading>(std::move(slots)), ClockOptions{}, true);
     return Manager<Threading>::create_root(std::move(data));
   }
 
@@ -88,17 +88,19 @@ public:
   static Runtime<Threading> plugin(std::shared_ptr<Plugin> instance)
   {
     return Manager<Threading>::create_root(std::make_unique<detail::ComponentData<Threading>>(
-      std::move(instance), params::Parameters{}, nullptr, typename Constructor<Threading>::SlotManagers{}, ClockOptions{}));
+      std::move(instance), params::Parameters{}, nullptr,
+      typename Constructor<Threading>::SlotManagers{}, ClockOptions{}, true));
   }
 
   template<class Threading = SingleThreaded>
   static Runtime<Threading> named(
     std::shared_ptr<Plugin> instance, const std::string & name,
-    std::vector<Runtime<Threading>> children = {})
+    std::vector<Runtime<Threading>> children = {},
+    std::string plugin_type = "controllers::Controller")
   {
     auto runtime = make<Threading>(std::move(instance), std::move(children));
     runtime.component_data().component_name_ = name;
-    runtime.component_data().plugin_type_ = "controllers::Controller";
+    runtime.component_data().plugin_type_ = std::move(plugin_type);
     return runtime;
   }
 
@@ -115,7 +117,7 @@ public:
       [dynamic](const std::string &, const ComponentSlot &) {return dynamic;},
       {}, {{"controllers", std::move(validator)}});
     return Script<Threading>(std::make_unique<detail::ComponentData<Threading>>(
-      nullptr, params::Parameters{}, nullptr, std::move(managers), ClockOptions{}));
+      nullptr, params::Parameters{}, nullptr, std::move(managers), ClockOptions{}, false));
   }
 
   template<class Threading = SingleThreaded>
@@ -127,7 +129,7 @@ public:
   {
     auto managers = assemble_test_slots<Threading>({}, spec, factory, policy, validators);
     return Script<Threading>(std::make_unique<detail::ComponentData<Threading>>(
-      nullptr, params::Parameters{}, nullptr, std::move(managers), ClockOptions{}));
+      nullptr, params::Parameters{}, nullptr, std::move(managers), ClockOptions{}, false));
   }
 
   static ScriptRuntime<> with_logger_and_parameters(
@@ -135,7 +137,8 @@ public:
     std::map<std::string, params::ParameterValue> parameters)
   {
     auto runtime = Script<SingleThreaded>(std::make_unique<detail::ComponentData<SingleThreaded>>(
-      nullptr, params::Parameters{}, nullptr, Constructor<SingleThreaded>::SlotManagers{}, ClockOptions{}));
+      nullptr, params::Parameters{}, nullptr,
+      Constructor<SingleThreaded>::SlotManagers{}, ClockOptions{}, false));
     runtime.component_data().logger_ = std::move(logger);
     runtime.component_data().parameters_ = params::Parameters(std::move(parameters));
     return runtime;
@@ -152,7 +155,7 @@ public:
     assignments.emplace("children", std::move(components));
     return Script<Threading>(std::make_unique<detail::ComponentData<Threading>>(
       nullptr, params::Parameters{}, nullptr,
-      assemble_test_slots<Threading>(std::move(assignments)), ClockOptions{}));
+      assemble_test_slots<Threading>(std::move(assignments)), ClockOptions{}, false));
   }
 
   // Test nested administration through production slot lookup without exposing it to plugins.
@@ -177,6 +180,15 @@ public:
   template<bool Concurrent>
   static ComponentStatus status(const ComponentRuntime<Concurrent> & runtime)
   {return runtime.storage_.slot->get_status(runtime.storage_.name);}
+
+  template<bool Concurrent>
+  static bool has_external_component_process(const ComponentRuntime<Concurrent> & runtime)
+  {return static_cast<bool>(runtime.component_data().external_component_process_);}
+
+  template<bool Concurrent, bool IsScript>
+  static auto slot_manager(
+    const BasicRuntime<Concurrent, IsScript> & runtime, const std::string & slot_name)
+  {return runtime.component_data().subcomponent_slots_.at(slot_name);}
 
 
 };

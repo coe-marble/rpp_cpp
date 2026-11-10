@@ -3,7 +3,6 @@
 #include "runtime_fwd.hpp"
 #include "threading.hpp"
 
-#include <any>
 #include <chrono>
 #include <functional>
 #include <initializer_list>
@@ -17,6 +16,7 @@
 #include <vector>
 
 #include "plugin_def.hpp"
+#include "handover_state.hpp"
 #include "component_constructor.hpp"
 #include "component_slots.hpp"
 
@@ -70,7 +70,6 @@ private:
   std::shared_ptr<Plugin> subcomponent_instance(
     const std::optional<std::string> & component_name) const;
   std::vector<std::shared_ptr<Plugin>> subcomponent_instances() const;
-  using ComponentBuildRequest = typename Constructor::ComponentBuildRequest;
   using PreparedComponents = typename Constructor::PreparedComponents;
   std::shared_ptr<Constructor> constructor_;
   static CallbackResult release_resources(ComponentData & component);
@@ -78,8 +77,8 @@ private:
   static CallbackResult configure_subcomponents(ComponentData & component);
   static CallbackResult cleanup_component(ComponentData & component);
   static CallbackResult cleanup_subcomponents(ComponentData & component);
-  static CallbackResult activate_component(ComponentData & component, const std::any & state);
-  static DeactivationResult<std::any> deactivate_component(ComponentData & component);
+  static CallbackResult activate_component(ComponentData & component, HandoverState state);
+  static DeactivationResult<HandoverState> deactivate_component(ComponentData & component);
   static CallbackResult activate_subcomponents(ComponentData & component);
   static CallbackResult deactivate_subcomponents(ComponentData & component, Timeout timeout);
   static CallbackResult deactivate_descendants_for_shutdown(ComponentData & component, Timeout timeout);
@@ -88,6 +87,8 @@ private:
   static CallbackResult process_subcomponent_deactivations(ComponentData & component, Timeout timeout);
   static CallbackResult configure_external_component(ComponentData & component);
   static CallbackResult cleanup_external_component(ComponentData & component);
+  static CallbackResult activate_external_component(ComponentData & component, HandoverState state);
+  static DeactivationResult<HandoverState> deactivate_external_component(ComponentData & component);
   static CallbackResult release_external_component_process(ComponentData & component);
   static CallbackResult request_deactivation(ComponentData & component);
 
@@ -122,13 +123,13 @@ private:
   template<typename Callback>
   static CallbackResult capture(const std::string & operation, Callback callback);
   CallbackResult drain(Entry &, Timeout);
-  DeactivationResult<std::any> stop(Entry &);
+  DeactivationResult<HandoverState> stop(Entry &);
   CallbackResult initialize(
-    const ComponentBuildRequest & request, const PreparedComponents & prepared,
+    const detail::ComponentBuildRequest & request, const PreparedComponents & prepared,
     std::unique_ptr<ComponentData> prepared_component = {});
   CallbackResult load_impl(
     const std::string &, const std::string &, bool initial,
-    const ComponentBuildRequest * request = nullptr, const PreparedComponents * prepared = nullptr,
+    const detail::ComponentBuildRequest * request = nullptr, const PreparedComponents * prepared = nullptr,
     std::unique_ptr<ComponentData> prepared_component = {});
 
   void release_call(Entry &);
@@ -198,9 +199,10 @@ public:
   /// Return the selected loaded runtime, falling back to the first loaded entry, or null.
   std::shared_ptr<ComponentRuntime> selected_runtime() const;
 
-  /// Share a named subcomponent's parent-facing view; unknown or unloaded entries throw.
+  /// Share a named or selected parent-facing subcomponent view; list slots require a name.
   /// A retained view stays bound to the old instance and rejects access after release.
-  std::shared_ptr<const SubcomponentContext> subcomponent_context(const std::string & name) const;
+  std::shared_ptr<const SubcomponentContext> subcomponent_context(
+    const std::optional<std::string> & component_name) const;
 
   /// Snapshot loaded parent-facing views in registration order, including inactive subcomponents.
   /// Views keep only their detached-access check alive, not the subcomponent runtimes/plugins.
@@ -216,6 +218,11 @@ public:
   /// An empty path reuses the entry's previous path; admission rejection preserves peers.
   CallbackResult load(const std::string & name, const std::string & component = "");
 
+  /// Dynamic load preserving the explicit plugin identity needed for linked component records.
+  CallbackResult load(
+    const std::string & name, const std::string & component,
+    const std::string & plugin_name);
+
   /// Synchronously configure an unconfigured entry and its subcomponents.
   /// Optional instance UUID rejects stale handles; failure leaves ERROR.
   CallbackResult configure(const std::string & name, std::optional<std::string_view> expected_instance_id = {});
@@ -223,13 +230,13 @@ public:
   /// Synchronously activate a configured entry, optionally using handover state.
   /// Exclusive slots reject a second active entry; expected UUID rejects stale handles.
   CallbackResult activate(
-    const std::string & name, const std::any & state = {},
+    const std::string & name, HandoverState state = {},
     std::optional<std::string_view> expected_instance_id = {});
 
   /// Close guarded admission, drain participating calls, and synchronously deactivate an entry.
   /// Return optional handover state; timeout/failure retains the runtime for recovery.
   /// Direct plugin calls remain governed by the plugin, not by this gate.
-  DeactivationResult<std::any> deactivate(
+  DeactivationResult<HandoverState> deactivate(
     const std::string & name,
     Timeout timeout = Timeout::max(), std::optional<std::string_view> expected_instance_id = {});
 

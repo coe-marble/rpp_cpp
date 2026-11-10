@@ -95,11 +95,11 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::configure_component(
 template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::activate_component(
   const std::string & slot_name, const std::string & name,
-  const std::any & state) const
-{return slot(slot_name).activate(name, state);}
+  HandoverState state) const
+{return slot(slot_name).activate(name, std::move(state));}
 
 template<bool Concurrent, bool IsScript>
-DeactivationResult<std::any> BasicRuntime<Concurrent, IsScript>::deactivate_component(
+DeactivationResult<HandoverState> BasicRuntime<Concurrent, IsScript>::deactivate_component(
   const std::string & slot_name,
   const std::string & name, Timeout timeout) const
 {return slot(slot_name).deactivate(name, timeout);}
@@ -148,18 +148,18 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::configure() const
 }
 
 template<bool Concurrent, bool IsScript>
-CallbackResult BasicRuntime<Concurrent, IsScript>::activate(const std::any & state) const
+CallbackResult BasicRuntime<Concurrent, IsScript>::activate(HandoverState state) const
 {
   if constexpr (IsScript) {
     (void)component_data();
     return state.has_value() ? CallbackResult::failure("A script has no plugin handover state") : CallbackResult{};
   } else {
-    return storage_.slot->activate(storage_.name, state, storage_.instance_id);
+    return storage_.slot->activate(storage_.name, std::move(state), storage_.instance_id);
   }
 }
 
 template<bool Concurrent, bool IsScript>
-DeactivationResult<std::any> BasicRuntime<Concurrent, IsScript>::deactivate(Timeout timeout) const
+DeactivationResult<HandoverState> BasicRuntime<Concurrent, IsScript>::deactivate(Timeout timeout) const
 {
   if constexpr (IsScript) {(void)component_data(); return {};}
   else {return storage_.slot->deactivate(storage_.name, timeout, storage_.instance_id);}

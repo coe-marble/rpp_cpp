@@ -697,90 +697,79 @@ TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
     ASSERT_TRUE(is_valid);
 }
 
-TEST_F(NativePluginTest, TestRpcControlServiceAdapterLocal)
+TEST_F(NativePluginTest, TestRpcControlServiceHostsComponentRuntime)
 {
-    std::string host = "127.0.0.1";
-    uint16_t port = get_available_port();
-
-    auto plugin_info = data_manager->get_plugin_info_from_lib("test_lib::ComponentPluginSimpleCpp");
+    const std::string host = "127.0.0.1";
+    const uint16_t port = get_available_port();
+    const auto component_path = NativePluginTest::test_data_dir + "/test_component_cpp";
+    auto plugin_info = data_manager->get_plugin_info_from_lib(
+      "test_lib::ComponentPluginComplexCpp");
     std::atomic<bool> server_ready(false);
     std::thread server_thread([&]() {
-
-      rpp::RppServerHost server_host(host, port);
-      auto instance = rpp::load_cpp_plugin_from_shared_library(plugin_info);
-      auto server_adapter =
-      rpp::load_plugin_adapter_server(
-                plugin_info, std::move(instance),
-                "test_name", "test_connection_name");
-
-      server_host.add_server(std::move(server_adapter));
+      rpp::ComponentRuntimeBuilder builder(*NativePluginTest::data_manager);
+      rpp::ComponentServerRequest request;
+      request.host = host;
+      request.port = port;
+      request.slots.push_back({
+        "test_connection_name", "rpp_testing::MotionController2D",
+        {{component_path, plugin_info.plugin_name}}});
+      auto server_host = builder.build_component_server(request);
       server_ready.store(true);
-      server_host.run();
+      server_host->run();
+      server_host->close().require_success("host shutdown");
     });
 
     int max_wait_time_ms = 3000;
     while (!server_ready.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    max_wait_time_ms -= 10;
-    if (max_wait_time_ms <= 0) {
-      FAIL() << "Server not ready after waiting for 1 second.";
-    }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      max_wait_time_ms -= 10;
+      if (max_wait_time_ms <= 0) {
+        FAIL() << "Server not ready after waiting for 3 seconds.";
+      }
     }
 
-    auto client_raw = rpp::load_plugin_adapter_client(plugin_info, "test_name",
-    "test_connection_name");
+    auto client_raw = rpp::load_plugin_adapter_client(
+      plugin_info, "test_name", "test_connection_name");
     auto client = dynamic_cast<rpp_testing::MotionController2D *>(client_raw.get());
     ASSERT_TRUE(client != nullptr);
 
     rpp::ComponentCallExecutor client_executor;
     client_executor.start();
     auto context = client_executor.call([&](kj::AsyncIoContext & io) {
-        return std::make_unique<rpp::RppRuntimeClientContext>(
-            host, port, std::chrono::seconds(5), &io);
+      return std::make_unique<rpp::RppRuntimeClientContext>(
+        host, port, std::chrono::seconds(5), &io);
     });
     ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext &) {
-      return client_raw->connect_adapter_client__(
-            *context, std::ref(client_executor));
+      return client_raw->connect_adapter_client__(*context, std::ref(client_executor));
     }));
     auto runtime_client = client_executor.call([&](kj::AsyncIoContext &) {
-        return std::make_unique<rpp::RpcControlClient>(*context);
+      return std::make_unique<rpp::RpcControlClient>(*context);
     });
 
-    client_executor.call([&](kj::AsyncIoContext &) {
-      runtime_client->ping();
+    auto configured = client_executor.call([&](kj::AsyncIoContext &) {
+      return runtime_client->configure_component("test_connection_name");
     });
-
-    auto adapter_list = client_executor.call([&](kj::AsyncIoContext &) {
-        return runtime_client->listAdapters();
-    });
-
-    ASSERT_EQ(adapter_list.size(), 1);
-    ASSERT_EQ(adapter_list[0].plugin_name, "test_lib::ComponentPluginSimpleCpp");
-    ASSERT_EQ(adapter_list[0].name, "test_name");
+    ASSERT_TRUE(configured.success) << configured.message;
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
     odom_msg.pose().position().x() = 1.0;
     odom_msg.pose().position().y() = 2.0;
     odom_msg.pose().yaw() = 4;
+    EXPECT_FALSE(client->validate(odom_msg));
 
-    bool is_valid = client->validate(odom_msg);
-
-    ASSERT_FALSE(is_valid);
-
-    client_executor.call([&](kj::AsyncIoContext &) {
-      runtime_client->shutdown();
+    auto cleaned = client_executor.call([&](kj::AsyncIoContext &) {
+      return runtime_client->cleanup_component("test_connection_name");
     });
+    EXPECT_TRUE(cleaned.success) << cleaned.message;
+    client_executor.call([&](kj::AsyncIoContext &) {runtime_client->shutdown();});
     client_executor.call([&](kj::AsyncIoContext &) {
       runtime_client.reset();
       client_raw.reset();
       context.reset();
     });
     client_executor.stop();
-
-
     server_thread.join();
 }
-
 
 RPP_PARAM_STRUCT(TestStruct1,
     RPP_MEMBER(int, width, 641),
@@ -794,7 +783,7 @@ RPP_PARAM_STRUCT(TestStruct2,
 )
 
 
-TEST_F(NativePluginTest, RuntimeConstructionAndReloadOutliveTheBuilderForBothPolicies)
+TEST_F(NativePluginTest, ReloadHappyPathWorksAfterBuilderDestructionForBothPolicies)
 {
   const auto check = [&](auto policy) {
     using Threading = decltype(policy);
@@ -811,7 +800,8 @@ TEST_F(NativePluginTest, RuntimeConstructionAndReloadOutliveTheBuilderForBothPol
       };
     auto runtime = [&] {
       Builder builder(*NativePluginTest::data_manager, rpp::ClockOptions{}, true, validators);
-      return builder.build_component_from_path(NativePluginTest::test_data_dir + "/test_component_cpp");
+      return builder.build_component(
+        {NativePluginTest::test_data_dir + "/test_component_cpp", ""});
     }();  // All subsequent operations happen after the builder has been destroyed.
     EXPECT_EQ(admissions, 1);
     const auto initial = runtime.get_subcomponent_statuses("ctl1");
@@ -851,7 +841,7 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
         [](const std::string & name, const rpp::ComponentSlot & type) {
           return name == "ctl1" && type.plugin_type == "rpp_testing::MotionController2D";
         }, rpp::ClockOptions{}, std::move(validators))
-    .build_component_from_path(component_folder);
+    .build_component({component_folder, ""});
     ASSERT_TRUE(validated);
     ASSERT_FALSE(context.allows_dynamic_components());
     ASSERT_TRUE(context.allows_dynamic_components("ctl1"));
@@ -860,7 +850,7 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
     ASSERT_EQ(subcomponent_list.size(), 1);
     ASSERT_EQ(subcomponent_list[0], "ctl1");
 
-    auto subcomponent = context.get_context().get_subcomponent<rpp_testing::MotionController2D>("ctl1");
+    auto subcomponent = context.get_context().get_subcomponent_instance<rpp_testing::MotionController2D>("ctl1");
 
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
@@ -923,7 +913,7 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
 
     auto context = rpp::ComponentRuntimeBuilder(
         *NativePluginTest::data_manager)
-    .build_component_from_path(component_folder);
+    .build_component({component_folder, ""});
 
     context.configure().require_success("on_configure");
 
@@ -932,9 +922,13 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
       rpp::ComponentRuntimeAccess::registered_components(context, "ctl_1");
     ASSERT_EQ(subcomponent_runtimes.size(), 1u);
     EXPECT_TRUE(subcomponent_runtimes.front()->get_context().list_subcomponents().empty());
+    EXPECT_FALSE(context.get_context().is_native_subcomponent("ctl_1"));
 
-    auto python_subcomponent =
-    context.get_context().get_subcomponent<rpp_testing::MotionController2D>("ctl_1");
+    EXPECT_THROW(
+      context.get_context().get_subcomponent_instance<rpp_testing::MotionController2D>("ctl_1"),
+      rpp::LifecycleError);
+    const auto & python_context = context.get_context().get_subcomponent_context("ctl_1");
+    auto python_subcomponent = python_context.get_instance<rpp_testing::MotionController2D>();
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
     odom_msg.pose().position().y() = 2.0;

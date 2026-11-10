@@ -1,15 +1,28 @@
 #include "rpp_cpp/python_helpers.hpp"
 #include <filesystem>
+#include <mutex>
 #include <stdexcept>
-#include <pybind11/pybind11.h>
+#include <pybind11/embed.h>
 
 namespace rpp
 {
 
-pybind11::module_ load_python_module(
-  const std::string & module_path,
-  pybind11::scoped_interpreter & /* guard*/)
+void ensure_python_interpreter()
 {
+  static std::once_flag initialized;
+  std::call_once(initialized, [] {
+    pybind11::initialize_interpreter();
+    // initialize_interpreter() leaves the GIL held by whichever application
+    // thread first loads parameters. Release it so later component/server
+    // threads can acquire it normally.
+    PyEval_SaveThread();
+  });
+}
+
+pybind11::module_ load_python_module(const std::string & module_path)
+{
+  ensure_python_interpreter();
+  pybind11::gil_scoped_acquire gil;
   if (!std::filesystem::exists(module_path)) {
     throw std::runtime_error("Python module not found: " + module_path);
   }
@@ -38,10 +51,10 @@ pybind11::module_ load_python_module(
   return pybind11::module_::import(module_name.c_str());
 }
 
-void close_python_module(
-  const std::string & module_path,
-  pybind11::scoped_interpreter & /* guard */)
+void close_python_module(const std::string & module_path)
 {
+  ensure_python_interpreter();
+  pybind11::gil_scoped_acquire gil;
   std::filesystem::path p(module_path);
   std::string module_name = p.stem().string();
 

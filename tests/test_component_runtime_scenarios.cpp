@@ -1,7 +1,6 @@
 #include "support/runtime_test_helpers.hpp"
 #include <gtest/gtest.h>
 
-#include <any>
 #include <chrono>
 #include <future>
 #include <map>
@@ -9,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -21,6 +21,14 @@ using namespace std::chrono_literals;
 using rpp::testing::ControllerState;
 using rpp::testing::EventLog;
 using rpp::testing::ScenarioController;
+
+template<typename Runtime, typename = void>
+struct HasRootInstanceAccessor : std::false_type {};
+
+template<typename Runtime>
+struct HasRootInstanceAccessor<Runtime, std::void_t<
+    decltype(std::declval<const Runtime &>().template get_instance<ScenarioController>())>>
+: std::true_type {};
 
 template<class Threading>
 class ComponentRuntimeScenarios : public ::testing::Test
@@ -92,9 +100,10 @@ TYPED_TEST(ComponentRuntimeScenarios, ScriptOwnsSlotsDirectlyAndCandidatesShareT
 {
   this->build();
   const auto & context = this->root->get_context();
+  using Script = std::remove_reference_t<decltype(*this->root)>;
+  static_assert(!HasRootInstanceAccessor<Script>::value);
   EXPECT_TRUE(context.get_instance_id().empty());
   EXPECT_FALSE(context.is_active());
-  EXPECT_THROW(this->root->template get_instance<ScenarioController>(), std::runtime_error);
   EXPECT_FALSE(context.request_deactivation().success);
 
   auto a = rpp::ComponentRuntimeAccess::registered_component(*this->root, "controllers", "a");
@@ -112,19 +121,19 @@ TYPED_TEST(ComponentRuntimeScenarios, ListLookupRequiresANameEvenWithOnlyOneLoad
 {
   this->build("List[controllers::Controller]");
   const auto & context = this->root->get_context();
-  EXPECT_THROW(context.template get_subcomponent<ScenarioController>("controllers"),
+  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers"),
     rpp::LifecycleError);
-  EXPECT_EQ(this->root->get_context().template get_subcomponent<ScenarioController>("controllers", "a"),
+  EXPECT_EQ(this->root->get_context().template get_subcomponent_instance<ScenarioController>("controllers", "a"),
     this->controllers.at("a"));
-  EXPECT_EQ(context.template get_subcomponent<ScenarioController>("controllers", "b"),
+  EXPECT_EQ(context.template get_subcomponent_instance<ScenarioController>("controllers", "b"),
     this->controllers.at("b"));
 
   ASSERT_TRUE(this->root->unload_component("controllers", "b").success);
-  EXPECT_THROW(context.template get_subcomponent<ScenarioController>("controllers"),
+  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers"),
     rpp::LifecycleError);
-  EXPECT_EQ(context.template get_subcomponent<ScenarioController>("controllers", "a"),
+  EXPECT_EQ(context.template get_subcomponent_instance<ScenarioController>("controllers", "a"),
     this->controllers.at("a"));
-  EXPECT_THROW(context.template get_subcomponent<ScenarioController>("controllers", "b"),
+  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers", "b"),
     rpp::LifecycleError);
 }
 
@@ -136,7 +145,7 @@ TYPED_TEST(ComponentRuntimeScenarios, RetainedSubcomponentViewDoesNotKeepPluginA
   components.push_back(rpp::ComponentRuntimeAccess::named<TypeParam>(std::move(plugin), "only"));
   this->root = std::make_unique<typename TestFixture::ScriptRuntime>(
     rpp::ComponentRuntimeAccess::script<TypeParam>(std::move(components), "controllers::Controller"));
-  const auto view = this->root->get_context().get_subcomponent_contexts("controllers").front();
+  const auto view = this->root->get_context().enumerate_subcomponent_contexts("controllers").front();
   ASSERT_FALSE(lifetime.expired());
   ASSERT_TRUE(this->root->configure().success);
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
@@ -157,7 +166,7 @@ TYPED_TEST(ComponentRuntimeScenarios, RetrievedInstanceOwnsPluginUntilItsLastPoi
   components.push_back(rpp::ComponentRuntimeAccess::named<TypeParam>(std::move(plugin), "only"));
   this->root = std::make_unique<typename TestFixture::ScriptRuntime>(
     rpp::ComponentRuntimeAccess::script<TypeParam>(std::move(components), "controllers::Controller"));
-  const auto view = this->root->get_context().get_subcomponent_contexts("controllers").front();
+  const auto view = this->root->get_context().enumerate_subcomponent_contexts("controllers").front();
   ASSERT_TRUE(this->root->configure().success);
   ASSERT_TRUE(view->activate().success);
   auto instance = view->template get_instance<ScenarioController>();
@@ -253,9 +262,10 @@ TYPED_TEST(ComponentRuntimeScenarios, ActivateCallDeactivateAndReactivate)
   auto stopped = this->root->deactivate_component("controllers", "a");
   ASSERT_TRUE(stopped.result.success);
   ASSERT_TRUE(stopped.state.has_value());
-  EXPECT_EQ(std::any_cast<ControllerState>(*stopped.state).value, 42);
+  EXPECT_EQ(stopped.state->template get<ControllerState>().value, 42);
   EXPECT_THROW(this->call("a"), rpp::LifecycleError);
-  ASSERT_TRUE(this->root->activate_component("controllers", "a", *stopped.state).success);
+  ASSERT_TRUE(
+    this->root->activate_component("controllers", "a", std::move(*stopped.state)).success);
   EXPECT_EQ(this->call("a"), 42);
   ASSERT_TRUE(this->root->close().success);
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{
@@ -279,7 +289,7 @@ TYPED_TEST(ComponentRuntimeScenarios, ExclusiveSwitchTransfersStateThenColdSwitc
   EXPECT_EQ(this->call("b"), 42);
   this->controllers.at("a")->state.value = 99;
   EXPECT_EQ(this->call("b"), 42);  // Handover is an owned snapshot.
-  EXPECT_EQ(this->root->get_context().template get_subcomponent<ScenarioController>("controllers"),
+  EXPECT_EQ(this->root->get_context().template get_subcomponent_instance<ScenarioController>("controllers"),
     this->controllers.at("b"));
 
   ASSERT_TRUE(this->root->switch_component("controllers", "b", "a", false).success);
@@ -559,7 +569,7 @@ TEST_F(ConcurrentRuntimeScenarios, SwitchTimeoutDoesNotActivateTargetAndRecovery
   auto stopped = root->deactivate_component("controllers", "a", 1s);
   ASSERT_TRUE(stopped.result.success);
   ASSERT_TRUE(stopped.state.has_value());
-  ASSERT_TRUE(root->activate_component("controllers", "a", *stopped.state).success);
+  ASSERT_TRUE(root->activate_component("controllers", "a", std::move(*stopped.state)).success);
   ASSERT_TRUE(root->switch_component("controllers", "a", "b", true, 1s).success);
   EXPECT_EQ(call("b"), 42);
   EXPECT_EQ(log.snapshot(), (std::vector<std::string>{

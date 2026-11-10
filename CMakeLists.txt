@@ -87,6 +87,8 @@ target_include_directories(rpp_cpp
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/rpp_cpp
 )
 
 add_executable(component_server_cpp src/component_server.cpp)
@@ -183,6 +185,8 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   # Discover inputs at configuration time; their generated outputs do not exist
   # until run_rpp_autogen finishes during the build.
   file(GLOB TEST_SCHEMAS CONFIGURE_DEPENDS "${COMMON_PLUGIN_TYPES_DIR}/*/*.capnp")
+  file(GLOB_RECURSE RPP_CPP_INTERFACE_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/rpp_cpp/*.hpp")
   set(GENERATED_SOURCES)
   foreach(SCHEMA IN LISTS TEST_SCHEMAS)
     file(RELATIVE_PATH SCHEMA_PATH "${COMMON_PLUGIN_TYPES_DIR}" "${SCHEMA}")
@@ -193,6 +197,7 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   add_custom_command(
     OUTPUT "${GENERATED_DIR}/gen_checked.stamp"
     BYPRODUCTS ${GENERATED_SOURCES}
+    DEPENDS ${RPP_CPP_INTERFACE_HEADERS}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND rpp ${RPP_ARGS}
     COMMAND ${CMAKE_COMMAND} -E touch "${GENERATED_DIR}/gen_checked.stamp"

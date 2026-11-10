@@ -7,7 +7,9 @@
 #include <chrono>
 #include <thread>
 #include <kj/async-io.h>
+#include <capnp/any.h>
 #include "adapter_info.hpp"
+#include "handover_state.hpp"
 #include <capnp/rpc-twoparty.h>
 
 
@@ -83,6 +85,23 @@ public:
   virtual capnp::Capability::Client create_capability_adapter_server__() = 0;
   virtual void close_adapter_server__() = 0;
   virtual const ServerAdapterInfo & get_info_adapter_server__() const = 0;
+  virtual CallbackResult decode_lifecycle_state__(
+    uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const
+  {
+    if (schema_id != 0 || !payload.isNull()) {
+      return CallbackResult::failure("Adapter does not support lifecycle state");
+    }
+    state = HandoverState{};
+    return {};
+  }
+  virtual CallbackResult encode_lifecycle_state__(
+    const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const
+  {
+    if (state.has_value()) {return CallbackResult::failure("Adapter does not support lifecycle state");}
+    schema_id = 0;
+    (void)payload;
+    return {};
+  }
 
 };
 
@@ -95,6 +114,23 @@ public:
     std::optional<std::reference_wrapper<ComponentCallExecutor>> executor =
     std::nullopt) = 0;
   virtual const ClientAdapterInfo & get_info_adapter_client__() const = 0;
+  virtual CallbackResult decode_lifecycle_state__(
+    uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const
+  {
+    if (schema_id != 0 || !payload.isNull()) {
+      return CallbackResult::failure("Adapter does not support lifecycle state");
+    }
+    state = HandoverState{};
+    return {};
+  }
+  virtual CallbackResult encode_lifecycle_state__(
+    const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const
+  {
+    if (state.has_value()) {return CallbackResult::failure("Adapter does not support lifecycle state");}
+    schema_id = 0;
+    (void)payload;
+    return {};
+  }
 };
 
 

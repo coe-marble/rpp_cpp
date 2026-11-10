@@ -72,7 +72,7 @@ TEST_F(ManagerTest, NormalFlowIdempotenceAndInstanceIdentity)
   auto stopped = manager.deactivate("localizer");
   ASSERT_TRUE(stopped.result.success);
   ASSERT_TRUE(stopped.state.has_value());
-  EXPECT_EQ(std::any_cast<Estimate>(*stopped.state).position, (std::vector<double>{1.0}));
+  EXPECT_EQ(stopped.state->get<Estimate>().position, (std::vector<double>{1.0}));
   EXPECT_FALSE(manager.deactivate("localizer").state.has_value());
   ASSERT_TRUE(manager.cleanup("localizer").success);
   EXPECT_EQ(manager.get_status("localizer").instance_id, instance_id);

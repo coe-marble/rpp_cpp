@@ -1,6 +1,5 @@
 #pragma once
 
-#include <any>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -12,11 +11,32 @@
 #include "threading.hpp"
 
 #include "runtime_fwd.hpp"
+#include "handover_state.hpp"
 #include "slot_manager.hpp"
 #include "context.hpp"
 
 namespace rpp
 {
+namespace detail
+{
+template<class Runtime, bool HasRootInstance>
+class RootInstanceAccess
+{};
+
+template<class Runtime>
+class RootInstanceAccess<Runtime, true>
+{
+public:
+  template<typename T>
+  std::shared_ptr<T> get_instance() const
+  {
+    auto instance = std::static_pointer_cast<T>(
+      static_cast<const Runtime *>(this)->component_data().instance_);
+    if (!instance) {throw std::runtime_error("This runtime has no plugin instance");}
+    return instance;
+  }
+};
+}  // namespace detail
 
 /**
  * Application-facing handle for lifecycle and component administration.
@@ -25,13 +45,14 @@ namespace rpp
  * Services and subcomponent access are exposed through get_context().
  */
 template<bool Concurrent, bool IsScript>
-class BasicRuntime
+class BasicRuntime : public detail::RootInstanceAccess<BasicRuntime<Concurrent, IsScript>, !IsScript>
 {
   using Runtime = BasicRuntime<Concurrent, IsScript>;
   using Threading = std::conditional_t<Concurrent, rpp::Concurrent, SingleThreaded>;
   using SlotManager = BasicSlotManager<Threading>;
   using ComponentData = detail::ComponentData<Threading>;
 
+  template<class, bool> friend class detail::RootInstanceAccess;
   friend class ComponentRuntimeAccess;
   friend class BasicSlotManager<Threading>;
   friend class BasicComponentRuntimeBuilder<Threading>;
@@ -77,19 +98,14 @@ public:
   /// Release detaches the view; its operations then throw LifecycleError.
   const ComponentContext & get_context() const;
 
-  /// Return the root plugin as T; a script has no instance and throws.
-  /// T must match its interface. Direct pointers acquire no lifecycle guard.
-  template<typename T>
-  std::shared_ptr<T> get_instance() const;
-
   /// Configure subcomponents before this plugin; failure leaves recovery to the caller.
   CallbackResult configure() const;
 
   /// Activate this plugin with optional handover state; subcomponents are explicit opt-in.
-  CallbackResult activate(const std::any & state = {}) const;
+  CallbackResult activate(HandoverState state = {}) const;
 
   /// Drain guarded calls and deactivate this plugin, returning optional handover state.
-  DeactivationResult<std::any> deactivate(Timeout timeout = Timeout::max()) const;
+  DeactivationResult<HandoverState> deactivate(Timeout timeout = Timeout::max()) const;
 
   /// Clean up this plugin, then subcomponents in reverse order, after active work stops.
   CallbackResult cleanup() const;
@@ -123,10 +139,10 @@ public:
   /// Activate a named entry; exclusive slots reject a second active entry.
   CallbackResult activate_component(
     const std::string & slot_name, const std::string & name,
-    const std::any & state = {}) const;
+    HandoverState state = {}) const;
 
   /// Drain guarded calls and deactivate a named entry, returning optional handover state.
-  DeactivationResult<std::any> deactivate_component(
+  DeactivationResult<HandoverState> deactivate_component(
     const std::string & slot_name, const std::string & name,
     Timeout timeout = Timeout::max()) const;
 
@@ -155,15 +171,5 @@ public:
   CallbackResult set_registration_validator(
     const std::string & slot_name, RegistrationValidator validator);
 };
-
-template<bool Concurrent, bool IsScript>
-template<typename T>
-std::shared_ptr<T> BasicRuntime<Concurrent, IsScript>::get_instance() const
-{
-  auto instance = std::static_pointer_cast<T>(
-    component_data().instance_);
-  if (!instance) {throw std::runtime_error("This runtime has no plugin instance");}
-  return instance;
-}
 
 }  // namespace rpp

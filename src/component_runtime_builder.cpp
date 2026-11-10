@@ -1,10 +1,14 @@
 #include "rpp_cpp/component_runtime_builder.hpp"
+#include "rpp_cpp/rpp_server_host.hpp"
+#include "rpp_cpp/plugin_loader.hpp"
 
+#include <set>
 #include <stdexcept>
 #include <utility>
 
 namespace rpp
 {
+using detail::ComponentBuildRequest;
 
 template<class Threading>
 BasicComponentRuntimeBuilder<Threading>::~BasicComponentRuntimeBuilder() = default;
@@ -67,22 +71,24 @@ BasicComponentRuntimeBuilder<Threading>::create_constructor() const
 }
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_component_from_path(
-  const std::string & component_path)
+rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_component(
+  const ComponentRequest & request)
 {
-  auto runtimes = build_from_component_roots({{component_path, ""}});
+  auto runtimes = build_components({request});
   return std::move(runtimes.front());
 }
 
 template<class Threading>
-std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::build_from_component_roots(
-  const std::vector<ComponentRoot> & roots)
+std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::build_components(
+  const std::vector<ComponentRequest> & requests)
 {
-  std::vector<typename ComponentConstructor<Threading>::ComponentBuildRequest> requests;
-  requests.reserve(roots.size());
-  for (const auto & root : roots) {requests.push_back({"", root.path, root.path, root.plugin_name});}
+  std::vector<ComponentBuildRequest> build_requests;
+  build_requests.reserve(requests.size());
+  for (const auto & request : requests) {
+    build_requests.push_back({"", request.path, request.path, request.plugin_name, {}});
+  }
   auto constructor = create_constructor();
-  auto components = constructor->construct_components(requests);
+  auto components = constructor->construct_components(build_requests);
   std::vector<ComponentRuntime> runtimes;
   runtimes.reserve(components.size());
   for (auto & component : components) {
@@ -95,30 +101,97 @@ std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeB
 }
 
 template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script_from_path(
-  const std::string & script_path, std::optional<std::string> configuration)
+rpp::ScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script(
+  const ScriptRequest & request)
 {
-  return build_script_from_description_path(
-    data_manager_.get_default_script_description_path(script_path), std::move(configuration));
-}
-
-template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script_from_library(
-  const std::string & library_name, const std::string & script_name,
-  std::optional<std::string> configuration)
-{
-  return build_script_from_description_path(
-    data_manager_.get_script_description_path_from_library(library_name, script_name),
-    std::move(configuration));
-}
-
-template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script_from_description_path(
-  const std::string & script_description_path, std::optional<std::string> configuration,
-  std::optional<std::string> parts_folder)
-{
+  std::string description_path;
+  if (const auto * path = std::get_if<ScriptPath>(&request.source)) {
+    description_path = data_manager_.get_default_script_description_path(path->path);
+  } else if (const auto * library = std::get_if<LibraryScript>(&request.source)) {
+    description_path = data_manager_.get_script_description_path_from_library(
+      library->library_name, library->script_name);
+  } else {
+    description_path = std::get<ScriptDescriptionPath>(request.source).path;
+  }
   return ScriptRuntime(create_constructor()->build_script(
-    script_description_path, std::move(configuration), std::move(parts_folder)));
+    description_path, request.configuration, request.parts_folder));
+}
+
+template<class Threading>
+std::unique_ptr<BasicRppServerHost<Threading>>
+BasicComponentRuntimeBuilder<Threading>::build_component_server(
+  const ComponentServerRequest & request)
+{
+  if (request.slots.empty()) {
+    throw std::invalid_argument("A component server requires at least one hosted slot");
+  }
+  auto server = std::make_unique<BasicRppServerHost<Threading>>(
+    request.host, request.port, request.logger);
+  std::set<std::string> connection_names;
+  for (const auto & slot_request : request.slots) {
+    if (slot_request.connection_name.empty() || !connection_names.insert(
+        slot_request.connection_name).second)
+    {
+      throw std::invalid_argument("Hosted slot connection names must be nonempty and unique");
+    }
+    if (slot_request.components.empty()) {
+      throw std::invalid_argument("Each hosted slot requires an initial component");
+    }
+    const auto description = parse_component_slot_type(slot_request.declaration);
+    const bool dynamic = std::holds_alternative<bool>(dynamic_components_) ?
+      std::get<bool>(dynamic_components_) :
+      std::get<DynamicComponentPolicy>(dynamic_components_)(slot_request.connection_name, description);
+    auto manager = std::make_shared<SlotManager>(
+      typename SlotManager::RuntimeFactory{}, description.activation_policy(), dynamic,
+      description.plugin_type);
+    auto constructor = create_constructor();
+    manager->constructor_ = constructor;
+    std::optional<PluginInfo> adapter_plugin_info;
+    for (const auto & component : slot_request.components) {
+      ComponentBuildRequest build_request{
+        "", component.path, component.path, component.plugin_name, {}};
+      auto record = constructor->get_component_record(build_request);
+      if (record.parent_component_info) {
+        throw LifecycleError("A subcomponent cannot be registered in a component server slot");
+      }
+      auto plugin_info = constructor->get_plugin_info(record);
+      if (!is_cpp_source_language(plugin_info))
+      {
+        throw std::invalid_argument("The C++ component server can only host C++ components");
+      }
+      if (!adapter_plugin_info) {adapter_plugin_info = std::move(plugin_info);}
+      build_request.name = record.name;
+      manager->initialize(build_request, {}).require_success(
+        "register " + slot_request.connection_name);
+    }
+    auto runtime = manager->selected_runtime();
+    if (!runtime) {
+      throw LifecycleError("Hosted slot has no selected initial component");
+    }
+    auto adapter = load_plugin_adapter_server(
+      *adapter_plugin_info, runtime->template get_instance<Plugin>(),
+      slot_request.connection_name + "_server", slot_request.connection_name,
+      "create_plugin_server", request.logger);
+    server->add_slot(
+      std::move(adapter), manager,
+      [manager, constructor](const std::string & path, const std::string & plugin_name) {
+        ComponentBuildRequest build_request{
+          "", path, path, plugin_name, {}};
+        auto record = constructor->get_component_record(build_request);
+        if (record.parent_component_info) {
+          return CallbackResult::failure(
+            "A subcomponent cannot be loaded into a component server slot");
+        }
+        if (!is_cpp_source_language(constructor->get_plugin_info(record)))
+        {
+          return CallbackResult::failure(
+            "The C++ component server can only host C++ components");
+        }
+        build_request.name = record.name;
+        return manager->load(build_request.name, build_request.path, build_request.plugin_name);
+      });
+  }
+  return server;
 }
 
 template class BasicComponentRuntimeBuilder<SingleThreaded>;

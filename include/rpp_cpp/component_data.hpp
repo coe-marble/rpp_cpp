@@ -24,7 +24,7 @@ struct ComponentData
   using SlotManagers = std::map<std::string, std::shared_ptr<BasicSlotManager<Threading>>>;
   ComponentData(std::shared_ptr<Plugin> instance, params::Parameters parameters,
     std::shared_ptr<ExternalComponentProcess> process, SlotManagers slots,
-    const ClockOptions & clock_options);
+    const ClockOptions & clock_options, bool is_native);
   static std::string create_instance_id();
   SlotManager & subcomponent_slot(const std::string & name) const
   {
@@ -42,6 +42,7 @@ struct ComponentData
   std::string component_reference_;
   std::string plugin_type_;
   std::string instance_id_;
+  bool is_native_ = false;
   std::shared_ptr<ExternalComponentProcess> external_component_process_;
   std::shared_ptr<ComponentContext> context_;
   std::shared_ptr<Plugin> instance_;

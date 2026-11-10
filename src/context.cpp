@@ -26,15 +26,23 @@ std::vector<std::string> ComponentContext::list_subcomponents() const
   });
 }
 
+bool ComponentContext::is_native_subcomponent(
+  const std::string & slot_name, std::optional<std::string> component_name) const
+{
+  return visit([&](auto & component) {
+    return component.subcomponent_slot(slot_name).subcomponent_context(component_name)->is_native();
+  });
+}
+
 const SubcomponentContext & ComponentContext::get_subcomponent_context(
-  const std::string & slot_name, const std::string & component_name) const
+  const std::string & slot_name, std::optional<std::string> component_name) const
 {
   return visit([&](auto & component) -> const SubcomponentContext & {
     return *component.subcomponent_slot(slot_name).subcomponent_context(component_name);
   });
 }
 
-std::vector<std::shared_ptr<const SubcomponentContext>> ComponentContext::get_subcomponent_contexts(
+std::vector<std::shared_ptr<const SubcomponentContext>> ComponentContext::enumerate_subcomponent_contexts(
   const std::string & slot_name) const
 {
   return visit([&](auto & component) {
@@ -59,14 +67,15 @@ CallbackResult ComponentContext::request_deactivation() const
   });
 }
 
-CallbackResult SubcomponentContext::activate(const std::any & state) const
+CallbackResult SubcomponentContext::activate(HandoverState state) const
 {
   return context_->visit([&](auto & component) {
-    return component.owning_slot_->activate(component.registration_name_, state, component.instance_id_);
+    return component.owning_slot_->activate(
+      component.registration_name_, std::move(state), component.instance_id_);
   });
 }
 
-DeactivationResult<std::any> SubcomponentContext::deactivate(Timeout timeout) const
+DeactivationResult<HandoverState> SubcomponentContext::deactivate(Timeout timeout) const
 {
   return context_->visit([&](auto & component) {
     return component.owning_slot_->deactivate(component.registration_name_, timeout, component.instance_id_);

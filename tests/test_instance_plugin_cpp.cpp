@@ -711,8 +711,8 @@ TEST_F(NativePluginTest, TestRpcControlServiceHostsComponentRuntime)
       request.host = host;
       request.port = port;
       request.slots.push_back({
-        "test_connection_name", "rpp_testing::MotionController2D",
-        {{component_path, plugin_info.plugin_name}}});
+      "test_connection_name", "rpp_testing::MotionController2D",
+      {{component_path, plugin_info.plugin_name}}});
       auto server_host = builder.build_component_server(request);
       server_ready.store(true);
       server_host->run();
@@ -721,11 +721,11 @@ TEST_F(NativePluginTest, TestRpcControlServiceHostsComponentRuntime)
 
     int max_wait_time_ms = 3000;
     while (!server_ready.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      max_wait_time_ms -= 10;
-      if (max_wait_time_ms <= 0) {
-        FAIL() << "Server not ready after waiting for 3 seconds.";
-      }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    max_wait_time_ms -= 10;
+    if (max_wait_time_ms <= 0) {
+      FAIL() << "Server not ready after waiting for 3 seconds.";
+    }
     }
 
     auto client_raw = rpp::load_plugin_adapter_client(
@@ -736,18 +736,18 @@ TEST_F(NativePluginTest, TestRpcControlServiceHostsComponentRuntime)
     rpp::ComponentCallExecutor client_executor;
     client_executor.start();
     auto context = client_executor.call([&](kj::AsyncIoContext & io) {
-      return std::make_unique<rpp::RppRuntimeClientContext>(
+        return std::make_unique<rpp::RppRuntimeClientContext>(
         host, port, std::chrono::seconds(5), &io);
     });
     ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext &) {
       return client_raw->connect_adapter_client__(*context, std::ref(client_executor));
     }));
     auto runtime_client = client_executor.call([&](kj::AsyncIoContext &) {
-      return std::make_unique<rpp::RpcControlClient>(*context);
+        return std::make_unique<rpp::RpcControlClient>(*context);
     });
 
     auto configured = client_executor.call([&](kj::AsyncIoContext &) {
-      return runtime_client->configure_component("test_connection_name");
+        return runtime_client->configure_component("test_connection_name");
     });
     ASSERT_TRUE(configured.success) << configured.message;
 
@@ -758,7 +758,7 @@ TEST_F(NativePluginTest, TestRpcControlServiceHostsComponentRuntime)
     EXPECT_FALSE(client->validate(odom_msg));
 
     auto cleaned = client_executor.call([&](kj::AsyncIoContext &) {
-      return runtime_client->cleanup_component("test_connection_name");
+        return runtime_client->cleanup_component("test_connection_name");
     });
     EXPECT_TRUE(cleaned.success) << cleaned.message;
     client_executor.call([&](kj::AsyncIoContext &) {runtime_client->shutdown();});
@@ -786,38 +786,39 @@ RPP_PARAM_STRUCT(TestStruct2,
 TEST_F(NativePluginTest, ReloadHappyPathWorksAfterBuilderDestructionForBothPolicies)
 {
   const auto check = [&](auto policy) {
-    using Threading = decltype(policy);
-    using Builder = rpp::BasicComponentRuntimeBuilder<Threading>;
-    SCOPED_TRACE(Threading::concurrent ? "Concurrent" : "SingleThreaded");
-    int admissions = 0;
-    typename Builder::RegistrationValidators validators;
-    validators["rpp_testing::MotionController2D"]["subcomponent1"] =
-      [&](const auto & candidate, const auto & registered) {
-        ++admissions;
-        return rpp::CallbackResult{registered.empty() &&
+      using Threading = decltype(policy);
+      using Builder = rpp::BasicComponentRuntimeBuilder<Threading>;
+      SCOPED_TRACE(Threading::concurrent ? "Concurrent" : "SingleThreaded");
+      int admissions = 0;
+      typename Builder::RegistrationValidators validators;
+      validators["rpp_testing::MotionController2D"]["subcomponent1"] =
+        [&](const auto & candidate, const auto & registered) {
+          ++admissions;
+          return rpp::CallbackResult{registered.empty() &&
           candidate.get_context().template get_parameter<float>("float_var") == 6.0f,
           "Unexpected constructed child"};
-      };
-    auto runtime = [&] {
-      Builder builder(*NativePluginTest::data_manager, rpp::ClockOptions{}, true, validators);
-      return builder.build_component(
-        {NativePluginTest::test_data_dir + "/test_component_cpp", ""});
-    }();  // All subsequent operations happen after the builder has been destroyed.
-    EXPECT_EQ(admissions, 1);
-    const auto initial = runtime.get_subcomponent_statuses("ctl1");
-    ASSERT_EQ(initial.size(), 1u);
-    EXPECT_EQ(initial.front().state, rpp::LifecycleState::UNCONFIGURED);
-    ASSERT_TRUE(runtime.configure().success);
-    const auto result = runtime.reload_component("ctl1", "subcomponent1");
-    ASSERT_TRUE(result.success) << result.message;
-    EXPECT_EQ(admissions, 2);
-    const auto reloaded = runtime.get_subcomponent_statuses("ctl1");
-    ASSERT_EQ(reloaded.size(), 1u);
-    EXPECT_NE(reloaded.front().instance_id, initial.front().instance_id);
-    EXPECT_EQ(reloaded.front().state, rpp::LifecycleState::INACTIVE);
-    EXPECT_EQ(rpp::ComponentRuntimeAccess::registered_component(runtime, "ctl1", "subcomponent1").get_context().template get_parameter<float>("float_var"), 6.0f);
-    EXPECT_TRUE(runtime.close().success);
-  };
+        };
+      auto runtime = [&] {
+          Builder builder(*NativePluginTest::data_manager, rpp::ClockOptions{}, true, validators);
+          return builder.build_component(
+            {NativePluginTest::test_data_dir + "/test_component_cpp", ""});
+        }(); // All subsequent operations happen after the builder has been destroyed.
+      EXPECT_EQ(admissions, 1);
+      const auto initial = runtime.get_subcomponent_statuses("ctl1");
+      ASSERT_EQ(initial.size(), 1u);
+      EXPECT_EQ(initial.front().state, rpp::LifecycleState::UNCONFIGURED);
+      ASSERT_TRUE(runtime.configure().success);
+      const auto result = runtime.reload_component("ctl1", "subcomponent1");
+      ASSERT_TRUE(result.success) << result.message;
+      EXPECT_EQ(admissions, 2);
+      const auto reloaded = runtime.get_subcomponent_statuses("ctl1");
+      ASSERT_EQ(reloaded.size(), 1u);
+      EXPECT_NE(reloaded.front().instance_id, initial.front().instance_id);
+      EXPECT_EQ(reloaded.front().state, rpp::LifecycleState::INACTIVE);
+      EXPECT_EQ(rpp::ComponentRuntimeAccess::registered_component(runtime, "ctl1",
+      "subcomponent1").get_context().template get_parameter<float>("float_var"), 6.0f);
+      EXPECT_TRUE(runtime.close().success);
+    };
   check(rpp::SingleThreaded{});
   check(rpp::Concurrent{});
 }
@@ -828,7 +829,8 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
     bool validated = false;
     rpp::ComponentRuntimeBuilder::RegistrationValidators validators{
     {"rpp_testing::MotionController2D",
-      {{"subcomponent1", [&validated](const rpp::ComponentRuntime<> & candidate, const auto & registered) {
+      {{"subcomponent1",
+        [&validated](const rpp::ComponentRuntime<> & candidate, const auto & registered) {
           validated = true;
           return rpp::CallbackResult{registered.empty() &&
             candidate.get_context().get_parameter<float>("float_var") == 6.0f,
@@ -838,8 +840,8 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
 
     auto context = rpp::ComponentRuntimeBuilder(
         *NativePluginTest::data_manager,
-        [](const std::string & name, const rpp::ComponentSlot & type) {
-          return name == "ctl1" && type.plugin_type == "rpp_testing::MotionController2D";
+    [](const std::string & name, const rpp::ComponentSlot & type) {
+      return name == "ctl1" && type.plugin_type == "rpp_testing::MotionController2D";
         }, rpp::ClockOptions{}, std::move(validators))
     .build_component({component_folder, ""});
     ASSERT_TRUE(validated);
@@ -882,7 +884,8 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
     ASSERT_EQ(struct2.values[3], 4);
     ASSERT_EQ(struct2.values[4], 5);
 
-    const auto & subcomponent_context = rpp::ComponentRuntimeAccess::registered_component(context, "ctl1", "subcomponent1");
+    const auto & subcomponent_context = rpp::ComponentRuntimeAccess::registered_component(context,
+    "ctl1", "subcomponent1");
     ASSERT_TRUE(subcomponent_context.allows_dynamic_components());
     ASSERT_EQ(subcomponent_context.get_context().list_subcomponents().size(), 0);
     // TEST PARAMETERS OF SUBCOMPONENT DEFAULT
@@ -919,7 +922,7 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
 
     // The Python host owns the child's descendants. The local proxy exposes no fake local slots.
     const auto subcomponent_runtimes =
-      rpp::ComponentRuntimeAccess::registered_components(context, "ctl_1");
+    rpp::ComponentRuntimeAccess::registered_components(context, "ctl_1");
     ASSERT_EQ(subcomponent_runtimes.size(), 1u);
     EXPECT_TRUE(subcomponent_runtimes.front()->get_context().list_subcomponents().empty());
     EXPECT_FALSE(context.get_context().is_native_subcomponent("ctl_1"));

@@ -71,7 +71,8 @@ BasicComponentRuntimeBuilder<Threading>::create_constructor() const
 }
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_component(
+rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::
+build_component(
   const ComponentRequest & request)
 {
   auto runtimes = build_components({request});
@@ -79,7 +80,8 @@ rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Thread
 }
 
 template<class Threading>
-std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::build_components(
+std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::
+build_components(
   const std::vector<ComponentRequest> & requests)
 {
   std::vector<ComponentBuildRequest> build_requests;
@@ -138,30 +140,51 @@ BasicComponentRuntimeBuilder<Threading>::build_component_server(
       throw std::invalid_argument("Each hosted slot requires an initial component");
     }
     const auto description = parse_component_slot_type(slot_request.declaration);
-    const bool dynamic = std::holds_alternative<bool>(dynamic_components_) ?
+    const bool requested_dynamic = std::holds_alternative<bool>(dynamic_components_) ?
       std::get<bool>(dynamic_components_) :
-      std::get<DynamicComponentPolicy>(dynamic_components_)(slot_request.connection_name, description);
+      std::get<DynamicComponentPolicy>(dynamic_components_)(slot_request.connection_name,
+        description);
+    auto constructor = create_constructor();
+    std::optional<bool> top_level_components;
+    for (const auto & component : slot_request.components) {
+      ComponentBuildRequest build_request{
+        "", component.path, component.path, component.plugin_name, {}};
+      const auto record = constructor->get_component_record(build_request);
+      const bool top_level = !record.parent_component_info;
+      if (top_level_components && *top_level_components != top_level) {
+        throw LifecycleError(
+          "A hosted slot cannot mix top-level components and subcomponents");
+      }
+      top_level_components = top_level;
+    }
+    const bool dynamic = requested_dynamic && *top_level_components;
     auto manager = std::make_shared<SlotManager>(
       typename SlotManager::RuntimeFactory{}, description.activation_policy(), dynamic,
       description.plugin_type);
-    auto constructor = create_constructor();
     manager->constructor_ = constructor;
     std::optional<PluginInfo> adapter_plugin_info;
+    std::vector<ComponentBuildRequest> initial_requests;
+    initial_requests.reserve(slot_request.components.size());
     for (const auto & component : slot_request.components) {
       ComponentBuildRequest build_request{
         "", component.path, component.path, component.plugin_name, {}};
       auto record = constructor->get_component_record(build_request);
-      if (record.parent_component_info) {
-        throw LifecycleError("A subcomponent cannot be registered in a component server slot");
-      }
       auto plugin_info = constructor->get_plugin_info(record);
-      if (!is_cpp_source_language(plugin_info))
-      {
+      if (!is_cpp_source_language(plugin_info)) {
         throw std::invalid_argument("The C++ component server can only host C++ components");
       }
       if (!adapter_plugin_info) {adapter_plugin_info = std::move(plugin_info);}
       build_request.name = record.name;
-      manager->initialize(build_request, {}).require_success(
+      initial_requests.push_back(std::move(build_request));
+    }
+    // Construct initial trees before registering them. In particular, this
+    // prepares any adapted descendants (for example, a Python child of a C++
+    // hosted component) instead of passing an empty prepared-components map to
+    // SlotManager::initialize().
+    auto initial_components = constructor->construct_components(initial_requests);
+    for (size_t index = 0; index < initial_requests.size(); ++index) {
+      manager->initialize(initial_requests[index], {},
+          std::move(initial_components[index])).require_success(
         "register " + slot_request.connection_name);
     }
     auto runtime = manager->selected_runtime();
@@ -182,14 +205,13 @@ BasicComponentRuntimeBuilder<Threading>::build_component_server(
           return CallbackResult::failure(
             "A subcomponent cannot be loaded into a component server slot");
         }
-        if (!is_cpp_source_language(constructor->get_plugin_info(record)))
-        {
+        if (!is_cpp_source_language(constructor->get_plugin_info(record))) {
           return CallbackResult::failure(
             "The C++ component server can only host C++ components");
         }
         build_request.name = record.name;
         return manager->load(build_request.name, build_request.path, build_request.plugin_name);
-      });
+      }, dynamic);
   }
   return server;
 }

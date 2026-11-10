@@ -7,10 +7,14 @@ struct Concurrent;
 class ComponentContext;
 class SubcomponentContext;
 
-template<bool Concurrent, bool IsScript> class BasicRuntime;
-template<class Threading = SingleThreaded> class BasicSlotManager;
-template<class Threading = SingleThreaded> class BasicComponentRuntimeBuilder;
-template<class Threading = SingleThreaded> class BasicRppServerHost;
+template<bool Concurrent, bool IsScript>
+class BasicRuntime;
+template<class Threading = SingleThreaded>
+class BasicSlotManager;
+template<class Threading = SingleThreaded>
+class BasicComponentRuntimeBuilder;
+template<class Threading = SingleThreaded>
+class BasicRppServerHost;
 
 /// Component lifecycle and administration through its owning slot.
 template<bool Concurrent = false>

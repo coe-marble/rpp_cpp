@@ -102,7 +102,8 @@ int main(int argc, char ** argv)
   if (paths.size() != conns.size() || paths.size() != plugin_names.size() ||
     paths.size() != slot_declarations.size())
   {
-    std::cerr << "Error: The number of --path, --plugin, --conn, and --slot arguments must be the same." <<
+    std::cerr <<
+      "Error: The number of --path, --plugin, --conn, and --slot arguments must be the same." <<
       std::endl;
     return 1;
   }

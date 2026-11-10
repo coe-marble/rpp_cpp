@@ -160,7 +160,8 @@ public:
 
   // Test nested administration through production slot lookup without exposing it to plugins.
   template<bool Concurrent, bool IsScript>
-  static auto registered_component(const BasicRuntime<Concurrent, IsScript> & runtime,
+  static auto registered_component(
+    const BasicRuntime<Concurrent, IsScript> & runtime,
     const std::string & slot_name, const std::string & component_name)
   {
     auto handle = runtime.slot(slot_name).runtime(component_name);
@@ -169,7 +170,8 @@ public:
   }
 
   template<bool Concurrent, bool IsScript>
-  static auto registered_components(const BasicRuntime<Concurrent, IsScript> & runtime,
+  static auto registered_components(
+    const BasicRuntime<Concurrent, IsScript> & runtime,
     const std::string & slot_name)
   {return runtime.slot(slot_name).runtimes();}
 
@@ -211,7 +213,9 @@ rpp::ScriptRuntime<Threading::concurrent> simple_controllers(
       return ComponentRuntimeAccess::named<Threading>(std::move(instance), name);
     };
   std::vector<Runtime> children;
-  for (const auto * name : {"a", "b"}) {children.push_back(factory(name));}
+  for (const auto * name : {"a", "b"}) {
+    children.push_back(factory(name));
+  }
   return ComponentRuntimeAccess::script<Threading>(
     std::move(children), declaration, dynamic, factory);
 }
@@ -233,7 +237,9 @@ rpp::ComponentRuntime<Threading::concurrent> controller_tree(
     children.push_back(controller_tree<Threading>(child, log, instances));
   }
   std::shared_ptr<ScenarioController> instance;
-  if (tree.children.empty()) {instance = std::make_shared<ScenarioController>(tree.name, log);} else {
+  if (tree.children.empty()) {
+    instance = std::make_shared<ScenarioController>(tree.name, log);
+  } else {
     instance = std::make_shared<CompositeController>(tree.name, log);
   }
   instances[tree.name] = instance;
@@ -242,7 +248,9 @@ rpp::ComponentRuntime<Threading::concurrent> controller_tree(
 }
 
 template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> nested_controllers(EventLog & log, ScenarioControllers & instances)
+rpp::ScriptRuntime<Threading::concurrent> nested_controllers(
+  EventLog & log,
+  ScenarioControllers & instances)
 {
   // script.controllers (exclusive)
   //   a -> children (list): a.left -> a.left.leaf, a.right
@@ -252,7 +260,7 @@ rpp::ScriptRuntime<Threading::concurrent> nested_controllers(EventLog & log, Sce
     const std::string parent = name;
     branches.push_back(controller_tree<Threading>(
         {parent, {{parent + ".left", {{parent + ".left.leaf", {}}}},
-          {parent + ".right", {}}}}, log, instances));
+            {parent + ".right", {}}}}, log, instances));
   }
   return ComponentRuntimeAccess::script<Threading>(
     std::move(branches), "Option[controllers::Controller]", true);
@@ -274,7 +282,9 @@ inline std::vector<ComponentRuntime<>> controllers(
   std::initializer_list<std::pair<std::string, std::set<std::string>>> definitions)
 {
   std::vector<ComponentRuntime<>> result;
-  for (const auto & [name, axes] : definitions) {result.push_back(controller(name, axes));}
+  for (const auto & [name, axes] : definitions) {
+    result.push_back(controller(name, axes));
+  }
   return result;
 }
 

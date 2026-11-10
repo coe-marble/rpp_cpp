@@ -97,7 +97,9 @@ public:
   virtual CallbackResult encode_lifecycle_state__(
     const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const
   {
-    if (state.has_value()) {return CallbackResult::failure("Adapter does not support lifecycle state");}
+    if (state.has_value()) {
+      return CallbackResult::failure("Adapter does not support lifecycle state");
+    }
     schema_id = 0;
     (void)payload;
     return {};
@@ -126,7 +128,9 @@ public:
   virtual CallbackResult encode_lifecycle_state__(
     const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const
   {
-    if (state.has_value()) {return CallbackResult::failure("Adapter does not support lifecycle state");}
+    if (state.has_value()) {
+      return CallbackResult::failure("Adapter does not support lifecycle state");
+    }
     schema_id = 0;
     (void)payload;
     return {};

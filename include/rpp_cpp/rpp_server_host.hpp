@@ -61,7 +61,8 @@ public:
 private:
   void add_slot(
     std::shared_ptr<ServerAdapter> adapter,
-    std::shared_ptr<SlotManager> manager, SlotLoader load_component)
+    std::shared_ptr<SlotManager> manager, SlotLoader load_component,
+    bool allows_dynamic_operations)
   {
     if (!adapter || !manager || !load_component) {
       throw std::invalid_argument("Server adapter, slot manager, and loader are required");
@@ -79,6 +80,11 @@ private:
     auto missing = [](const std::string & instance_id) {
         return CallbackResult::failure("Unknown hosted component instance: " + instance_id);
       };
+    auto dynamic_operations_disabled = [] {
+        return CallbackResult::failure(
+          "This hosted slot is lifecycle-only; load, unload, reload, and switch "
+          "are available only for dynamic top-level components");
+      };
     auto refresh_adapter = [adapter, manager]() -> CallbackResult {
         auto runtime = manager->selected_runtime();
         if (!runtime) {
@@ -91,56 +97,66 @@ private:
         params->plugin_name = info.plugin_name;
         params->backend = runtime->template get_instance<Plugin>();
         return adapter->configure_adapter_server__(std::move(params)) ? CallbackResult{} :
-          CallbackResult::failure("Failed to bind adapter to selected hosted component");
+               CallbackResult::failure("Failed to bind adapter to selected hosted component");
       };
     rpc_server_impl_->register_slot(name, RpcControlService::SlotControl{
-      adapter,
-      [manager] {return manager->list();},
-      [load_component = std::move(load_component), refresh_adapter](
-        const std::string & path, const std::string & plugin) {
-        auto result = load_component(path, plugin);
-        return result.success ? refresh_adapter() : result;
-      },
-      [manager, entry_name, missing](const std::string & instance_id) {
-        auto component = entry_name(instance_id);
-        return component ? manager->configure(*component, instance_id) : missing(instance_id);
-      },
-      [manager, entry_name, missing](const std::string & instance_id) {
-        auto component = entry_name(instance_id);
-        return component ? manager->cleanup(*component, instance_id) : missing(instance_id);
-      },
-      [manager, entry_name, missing](const std::string & instance_id, HandoverState state) {
-        auto component = entry_name(instance_id);
-        return component ? manager->activate(*component, std::move(state), instance_id) : missing(instance_id);
-      },
-      [manager, entry_name, missing](const std::string & instance_id) -> DeactivationResult<HandoverState> {
-        auto component = entry_name(instance_id);
-        return component ? manager->deactivate(*component, Timeout::max(), instance_id) :
-          DeactivationResult<HandoverState>{missing(instance_id), {}};
-      },
-      [manager, entry_name, missing, refresh_adapter](const std::string & instance_id) {
-        auto component = entry_name(instance_id);
-        if (!component) {return missing(instance_id);}
-        auto result = manager->unload(*component, Timeout::max(), instance_id);
-        return result.success && manager->selected_runtime() ? refresh_adapter() : result;
-      },
-      [manager, entry_name, missing, refresh_adapter](const std::string & instance_id, bool transfer_state) {
-        auto component = entry_name(instance_id);
-        if (!component) {return missing(instance_id);}
-        auto result = manager->reload(*component, transfer_state);
-        return result.success ? refresh_adapter() : result;
-      },
-      [manager, entry_name, missing, refresh_adapter](
-        const std::string & source_id, const std::string & target_id, bool transfer_state) {
-        auto source = entry_name(source_id);
-        auto target = entry_name(target_id);
-        if (!source) {return missing(source_id);}
-        if (!target) {return missing(target_id);}
-        auto result = manager->switch_components(*source, *target, transfer_state);
-        return result.success ? refresh_adapter() : result;
-      },
-      [manager] {return manager->close();},
-      std::move(refresh_adapter),
+        adapter,
+        [manager] {return manager->list();},
+        [load_component = std::move(load_component), refresh_adapter, allows_dynamic_operations,
+        dynamic_operations_disabled](
+          const std::string & path, const std::string & plugin) {
+          if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
+          auto result = load_component(path, plugin);
+          return result.success ? refresh_adapter() : result;
+        },
+        [manager, entry_name, missing](const std::string & instance_id) {
+          auto component = entry_name(instance_id);
+          return component ? manager->configure(*component, instance_id) : missing(instance_id);
+        },
+        [manager, entry_name, missing](const std::string & instance_id) {
+          auto component = entry_name(instance_id);
+          return component ? manager->cleanup(*component, instance_id) : missing(instance_id);
+        },
+        [manager, entry_name, missing](const std::string & instance_id, HandoverState state) {
+          auto component = entry_name(instance_id);
+          return component ? manager->activate(*component, std::move(state),
+            instance_id) : missing(instance_id);
+        },
+        [manager, entry_name,
+        missing](const std::string & instance_id) -> DeactivationResult<HandoverState> {
+          auto component = entry_name(instance_id);
+          return component ? manager->deactivate(*component, Timeout::max(), instance_id) :
+                 DeactivationResult<HandoverState>{missing(instance_id), {}};
+        },
+        [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
+        dynamic_operations_disabled](const std::string & instance_id) {
+          if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
+          auto component = entry_name(instance_id);
+          if (!component) {return missing(instance_id);}
+          auto result = manager->unload(*component, Timeout::max(), instance_id);
+          return result.success && manager->selected_runtime() ? refresh_adapter() : result;
+        },
+        [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
+        dynamic_operations_disabled](const std::string & instance_id, bool transfer_state) {
+          if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
+          auto component = entry_name(instance_id);
+          if (!component) {return missing(instance_id);}
+          auto result = manager->reload(*component, transfer_state);
+          return result.success ? refresh_adapter() : result;
+        },
+        [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
+        dynamic_operations_disabled](
+          const std::string & source_id, const std::string & target_id, bool transfer_state) {
+          if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
+          auto source = entry_name(source_id);
+          auto target = entry_name(target_id);
+          if (!source) {return missing(source_id);}
+          if (!target) {return missing(target_id);}
+          auto result = manager->switch_components(*source, *target, transfer_state);
+          return result.success ? refresh_adapter() : result;
+        },
+        [manager] {return manager->close();},
+        std::move(refresh_adapter),
     });
     adapters_[name] = adapter;
     slots_[name] = std::move(manager);

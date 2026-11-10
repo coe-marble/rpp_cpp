@@ -23,7 +23,7 @@ class RemoteState
 public:
   class Const
   {
-  public:
+public:
     explicit Const(runtime::AdapterInfo::Reader reader)
     : reader_(reader) {}
 
@@ -50,7 +50,7 @@ public:
     std::string name() const {return reader_.getName().cStr();}
     operator runtime::AdapterInfo::Reader() const {return reader_;}
 
-  private:
+private:
     explicit Const(std::unique_ptr<capnp::MallocMessageBuilder> message)
     : message_(std::move(message)),
       reader_(message_->getRoot<runtime::AdapterInfo>()) {}
@@ -112,7 +112,8 @@ public:
     uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const override
   {return decode(schema_id, payload, state);}
   CallbackResult encode_lifecycle_state__(
-    const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const override
+    const HandoverState & state, uint64_t & schema_id,
+    capnp::AnyPointer::Builder payload) const override
   {return encode(state, schema_id, payload);}
 
 private:
@@ -131,7 +132,8 @@ public:
     uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const override
   {return decode(schema_id, payload, state);}
   CallbackResult encode_lifecycle_state__(
-    const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload) const override
+    const HandoverState & state, uint64_t & schema_id,
+    capnp::AnyPointer::Builder payload) const override
   {return encode(state, schema_id, payload);}
 
 private:

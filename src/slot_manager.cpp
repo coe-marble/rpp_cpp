@@ -56,13 +56,16 @@ std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> Basic
   result.reserve(registration_order_.size());
   for (const auto & name : registration_order_) {
     auto item = component_entries_.at(name);
-    if (item->component && !item->component->resources_released_) {result.push_back(runtime_view(*item));}
+    if (item->component && !item->component->resources_released_) {
+      result.push_back(runtime_view(*item));
+    }
   }
   return result;
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::runtime(const std::string & name) const
+std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::runtime(
+  const std::string & name) const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   auto item = entry_unlocked(name);
@@ -101,7 +104,8 @@ std::shared_ptr<Plugin> BasicSlotManager<Threading>::subcomponent_instance(
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::selected_runtime() const
+std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
+selected_runtime() const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   auto selected = selected_entry_unlocked();
@@ -134,7 +138,9 @@ BasicSlotManager<Threading>::subcomponent_contexts() const
   views.reserve(registration_order_.size());
   for (const auto & name : registration_order_) {
     const auto & item = component_entries_.at(name);
-    if (item->component && !item->component->resources_released_ && item->subcomponent_context) {views.push_back(item->subcomponent_context);}
+    if (item->component && !item->component->resources_released_ && item->subcomponent_context) {
+      views.push_back(item->subcomponent_context);
+    }
   }
   return views;
 }
@@ -156,7 +162,9 @@ std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> Basic
   result.reserve(registration_order_.size());
   for (const auto & name : registration_order_) {
     const auto & item = component_entries_.at(name);
-    if (item->component && !item->component->resources_released_ && item->may_be_active) {result.push_back(runtime_view(*item));}
+    if (item->component && !item->component->resources_released_ && item->may_be_active) {
+      result.push_back(runtime_view(*item));
+    }
   }
   return result;
 }
@@ -168,14 +176,17 @@ CallbackResult BasicSlotManager<Threading>::validate(
 {
   const auto & candidate_type = component_data(name, candidate.storage_.instance_id).plugin_type_;
   if (!plugin_type_.empty() && !candidate_type.empty() && candidate_type != plugin_type_) {
-    return CallbackResult::failure("Expected component type " + plugin_type_ + ", got " + candidate_type);
+    return CallbackResult::failure("Expected component type " + plugin_type_ + ", got " +
+        candidate_type);
   }
   auto named = registration_validators_by_name_.find(name);
   if (!registration_validator_ && named == registration_validators_by_name_.end()) {return {};}
   std::vector<std::shared_ptr<const ComponentRuntime>> registered;
   for (const auto & key : registration_order_) {
     const auto & item = component_entries_.at(key);
-    if (key != name && item->component && !item->component->resources_released_) {registered.push_back(runtime_view(*item));}
+    if (key != name && item->component && !item->component->resources_released_) {
+      registered.push_back(runtime_view(*item));
+    }
   }
   registration_validation_in_progress_ = true;
   auto result = capture(
@@ -185,7 +196,7 @@ CallbackResult BasicSlotManager<Threading>::validate(
         if (!result.success) {return result;}
       }
       return named == registration_validators_by_name_.end() ? CallbackResult{} :
-      named->second(candidate, registered);
+             named->second(candidate, registered);
     });
   registration_validation_in_progress_ = false;
   return result;
@@ -205,7 +216,8 @@ CallbackResult BasicSlotManager<Threading>::set_registration_validator(Validator
 }
 
 template<class Threading>
-std::shared_ptr<typename BasicSlotManager<Threading>::Entry> BasicSlotManager<Threading>::entry(const std::string & name) const
+std::shared_ptr<typename BasicSlotManager<Threading>::Entry> BasicSlotManager<Threading>::entry(
+  const std::string & name) const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   return entry_unlocked(name);
@@ -268,7 +280,9 @@ std::optional<CallbackResult> BasicSlotManager<Threading>::begin(
 }
 
 template<class Threading>
-CallbackResult BasicSlotManager<Threading>::finish(Entry & item, LifecycleState state, CallbackResult result)
+CallbackResult BasicSlotManager<Threading>::finish(
+  Entry & item, LifecycleState state,
+  CallbackResult result)
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   item.info.state = state;
@@ -280,7 +294,9 @@ CallbackResult BasicSlotManager<Threading>::finish(Entry & item, LifecycleState 
 
 template<class Threading>
 template<typename Callback>
-CallbackResult BasicSlotManager<Threading>::capture(const std::string & operation, Callback callback)
+CallbackResult BasicSlotManager<Threading>::capture(
+  const std::string & operation,
+  Callback callback)
 {
   try {
     return callback();
@@ -312,11 +328,13 @@ CallbackResult BasicSlotManager<Threading>::drain(Entry & item, Timeout timeout)
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::runtime_view(const Entry & item) const
+std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
+runtime_view(const Entry & item) const
 {
   auto owner = const_cast<SlotManager *>(this)->shared_from_this();
-  return std::shared_ptr<ComponentRuntime>(new ComponentRuntime(typename ComponentRuntime::ComponentHandle{
-    std::move(owner), item.info.name, item.info.instance_id, false}));
+  return std::shared_ptr<ComponentRuntime>(new ComponentRuntime(
+      typename ComponentRuntime::ComponentHandle{
+      std::move(owner), item.info.name, item.info.instance_id, false}));
 }
 
 template<class Threading>
@@ -355,7 +373,9 @@ template<class Threading>
 rpp::ComponentRuntime<Threading::concurrent> BasicSlotManager<Threading>::create_root(
   std::unique_ptr<ComponentData> component, std::shared_ptr<SlotManager> manager)
 {
-  if (!component->instance_) {throw LifecycleError("A component slot entry requires a plugin instance");}
+  if (!component->instance_) {
+    throw LifecycleError("A component slot entry requires a plugin instance");
+  }
   if (!manager) {
     manager = std::make_shared<SlotManager>(RuntimeFactory{}, ActivationPolicy::EXCLUSIVE, false);
   }
@@ -365,7 +385,8 @@ rpp::ComponentRuntime<Threading::concurrent> BasicSlotManager<Threading>::create
   manager->initialize({name, path, path, "", {}}, {}, std::move(component)).require_success(
     "register root component");
   manager->entry(name)->subcomponent_context.reset();
-  return ComponentRuntime(typename ComponentRuntime::ComponentHandle{std::move(manager), name, id, true});
+  return ComponentRuntime(typename ComponentRuntime::ComponentHandle{std::move(manager), name, id,
+             true});
 }
 
 template<class Threading>
@@ -373,7 +394,8 @@ CallbackResult BasicSlotManager<Threading>::initialize(
   const ComponentBuildRequest & request, const PreparedComponents & prepared,
   std::unique_ptr<ComponentData> prepared_component)
 {
-  return load_impl(request.name, request.path, true, &request, &prepared, std::move(prepared_component));
+  return load_impl(request.name, request.path, true, &request, &prepared,
+      std::move(prepared_component));
 }
 
 template<class Threading>
@@ -401,7 +423,9 @@ CallbackResult BasicSlotManager<Threading>::load_impl(
   if (has_local_call()) {
     return CallbackResult::failure("Cannot manage a slot from inside its guarded call");
   }
-  if (!initial && !allow_dynamic_components_) {return CallbackResult::failure("Dynamic component modification is disabled");}
+  if (!initial && !allow_dynamic_components_) {
+    return CallbackResult::failure("Dynamic component modification is disabled");
+  }
   if (registration_validation_in_progress_) {
     return CallbackResult::failure("Cannot mutate a slot from its registration validator");
   }
@@ -447,7 +471,8 @@ CallbackResult BasicSlotManager<Threading>::load_impl(
         if (factory_) {
           auto constructed = factory_(item->info.component);
           if (!constructed.storage_.slot) {
-            return CallbackResult::failure("A slot factory must return an unconfigured component runtime");
+            return CallbackResult::failure(
+              "A slot factory must return an unconfigured component runtime");
           }
           candidate = constructed.storage_.slot->take_component(constructed);
         } else {
@@ -492,7 +517,8 @@ CallbackResult BasicSlotManager<Threading>::load_impl(
     std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
     if (new_entry) {
       component_entries_.erase(name);
-      registration_order_.erase(std::remove(registration_order_.begin(), registration_order_.end(), name), registration_order_.end());
+      registration_order_.erase(std::remove(registration_order_.begin(), registration_order_.end(),
+          name), registration_order_.end());
     } else {
       item->info.component = previous_component;
       item->build_request = previous_request;
@@ -544,7 +570,9 @@ CallbackResult BasicSlotManager<Threading>::activate(
   if (expected_instance_id && entry(name)->info.instance_id != *expected_instance_id) {
     return CallbackResult::failure("Stale component runtime instance");
   }
-  if (!allow_dynamic_components_ && activation_policy_ == ActivationPolicy::EXCLUSIVE && name != component_name_) {
+  if (!allow_dynamic_components_ && activation_policy_ == ActivationPolicy::EXCLUSIVE &&
+    name != component_name_)
+  {
     return CallbackResult::failure("Dynamic component selection is disabled");
   }
   if (activation_policy_ == ActivationPolicy::EXCLUSIVE) {
@@ -555,7 +583,9 @@ CallbackResult BasicSlotManager<Threading>::activate(
     }
   }
   auto item = entry(name);
-  if (item->info.state == LifecycleState::ACTIVE && !item->info.transition && !shutdown_requested_) {
+  if (item->info.state == LifecycleState::ACTIVE && !item->info.transition &&
+    !shutdown_requested_)
+  {
     return {};
   }
   auto rejected = begin(*item, "activate", {LifecycleState::INACTIVE});
@@ -719,7 +749,9 @@ CallbackResult BasicSlotManager<Threading>::switch_components(
   if (has_local_call()) {
     return CallbackResult::failure("Cannot manage a slot from inside its guarded call");
   }
-  if (!allow_dynamic_components_) {return CallbackResult::failure("Dynamic component modification is disabled");}
+  if (!allow_dynamic_components_) {
+    return CallbackResult::failure("Dynamic component modification is disabled");
+  }
   if (registration_validation_in_progress_) {
     return CallbackResult::failure("Cannot mutate a slot from its registration validator");
   }
@@ -760,7 +792,9 @@ CallbackResult BasicSlotManager<Threading>::reload(
   if (has_local_call()) {
     return CallbackResult::failure("Cannot manage a slot from inside its guarded call");
   }
-  if (!allow_dynamic_components_) {return CallbackResult::failure("Dynamic component modification is disabled");}
+  if (!allow_dynamic_components_) {
+    return CallbackResult::failure("Dynamic component modification is disabled");
+  }
   if (registration_validation_in_progress_) {
     return CallbackResult::failure("Cannot mutate a slot from its registration validator");
   }
@@ -817,7 +851,8 @@ BasicSlotManager<Threading>::BasicSlotManager(
   RuntimeFactory factory, ActivationPolicy policy,
   bool allow_dynamic_components, std::string plugin_type, Validator validator,
   NamedValidators named_validators)
-: factory_(std::move(factory)), activation_policy_(policy), allow_dynamic_components_(allow_dynamic_components),
+: factory_(std::move(factory)), activation_policy_(policy),
+  allow_dynamic_components_(allow_dynamic_components),
   plugin_type_(std::move(plugin_type)), registration_validator_(std::move(validator)),
   registration_validators_by_name_(std::move(named_validators)) {}
 
@@ -879,7 +914,9 @@ std::vector<ComponentStatus> BasicSlotManager<Threading>::list() const
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   std::vector<ComponentStatus> result;
   result.reserve(registration_order_.size());
-  for (const auto & name : registration_order_) {result.push_back(component_entries_.at(name)->info);}
+  for (const auto & name : registration_order_) {
+    result.push_back(component_entries_.at(name)->info);
+  }
   return result;
 }
 
@@ -890,7 +927,9 @@ CallbackResult BasicSlotManager<Threading>::release_resources(
   CallbackResult first_error;
   component.instance_.reset();
   if (component.context_) {component.context_->detach();}
-  for (auto item = component.subcomponent_slots_.rbegin(); item != component.subcomponent_slots_.rend(); ++item) {
+  for (auto item = component.subcomponent_slots_.rbegin();
+    item != component.subcomponent_slots_.rend(); ++item)
+  {
     auto result = item->second->close();
     if (!result.success && first_error.success) {first_error = result;}
   }
@@ -910,7 +949,8 @@ CallbackResult BasicSlotManager<Threading>::configure_subcomponents(ComponentDat
   for (const auto & [name, manager] : component.subcomponent_slots_) {
     (void)name;
     for (const auto & subcomponent : manager->runtimes()) {
-      auto result = manager->configure(subcomponent->storage_.name, subcomponent->storage_.instance_id);
+      auto result = manager->configure(subcomponent->storage_.name,
+          subcomponent->storage_.instance_id);
       if (!result.success) {return result;}
     }
   }
@@ -923,7 +963,9 @@ CallbackResult BasicSlotManager<Threading>::configure_component(ComponentData & 
   auto result = configure_subcomponents(component);
   if (!result.success) {return result;}
   if (component.external_component_process_) {return configure_external_component(component);}
-  if (!component.instance_) {return CallbackResult::failure("Component instance is not loaded; unload before configuring");}
+  if (!component.instance_) {
+    return CallbackResult::failure("Component instance is not loaded; unload before configuring");
+  }
   return component.instance_->configure(*component.context_);
 }
 
@@ -963,15 +1005,22 @@ CallbackResult BasicSlotManager<Threading>::cleanup_subcomponents(ComponentData 
   }
   CallbackResult first_error;
   auto record_error = [&](const CallbackResult & result) {
-    if (!result.success) {
-      if (first_error.success) {first_error = result;}
-      else {RPP_LOG_ERROR(*component.logger_, "Additional subcomponent cleanup failure: %s", result.message.c_str());}
-    }
-  };
-  for (auto item = component.subcomponent_slots_.rbegin(); item != component.subcomponent_slots_.rend(); ++item) {
+      if (!result.success) {
+        if (first_error.success) {first_error = result;} else {
+          RPP_LOG_ERROR(*component.logger_, "Additional subcomponent cleanup failure: %s",
+            result.message.c_str());
+        }
+      }
+    };
+  for (auto item = component.subcomponent_slots_.rbegin();
+    item != component.subcomponent_slots_.rend(); ++item)
+  {
     auto subcomponents = item->second->runtimes();
-    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend(); ++subcomponent) {
-      record_error(item->second->cleanup((*subcomponent)->storage_.name, (*subcomponent)->storage_.instance_id));
+    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend();
+      ++subcomponent)
+    {
+      record_error(item->second->cleanup((*subcomponent)->storage_.name,
+        (*subcomponent)->storage_.instance_id));
     }
   }
   return first_error;
@@ -986,7 +1035,8 @@ CallbackResult BasicSlotManager<Threading>::activate_component(
   }
   if (!component.instance_) {
     return state.has_value() ?
-           CallbackResult::failure("A context without a plugin accepts no state") : CallbackResult{};
+           CallbackResult::failure("A context without a plugin accepts no state") :
+           CallbackResult{};
   }
   auto validation = component.instance_->validate_handover_state(state);
   if (!validation.success) {return validation;}
@@ -1049,10 +1099,15 @@ CallbackResult BasicSlotManager<Threading>::deactivate_subcomponents(
     return CallbackResult::failure("The component runtime has been released");
   }
   CallbackResult first_error;
-  for (auto slot = component.subcomponent_slots_.rbegin(); slot != component.subcomponent_slots_.rend(); ++slot) {
+  for (auto slot = component.subcomponent_slots_.rbegin();
+    slot != component.subcomponent_slots_.rend(); ++slot)
+  {
     auto subcomponents = slot->second->deactivation_runtimes();
-    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend(); ++subcomponent) {
-      auto result = slot->second->deactivate((*subcomponent)->storage_.name, timeout, (*subcomponent)->storage_.instance_id).result;
+    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend();
+      ++subcomponent)
+    {
+      auto result = slot->second->deactivate((*subcomponent)->storage_.name, timeout,
+          (*subcomponent)->storage_.instance_id).result;
       if (!result.success) {
         if (first_error.success) {first_error = result;} else {
           RPP_LOG_ERROR(
@@ -1071,11 +1126,16 @@ CallbackResult BasicSlotManager<Threading>::deactivate_descendants_for_shutdown(
 {
   auto first_error = deactivate_subcomponents(component, timeout);
   // An inactive subcomponent may still own active descendants when its callbacks left them running.
-  for (auto slot = component.subcomponent_slots_.rbegin(); slot != component.subcomponent_slots_.rend(); ++slot) {
+  for (auto slot = component.subcomponent_slots_.rbegin();
+    slot != component.subcomponent_slots_.rend(); ++slot)
+  {
     auto subcomponents = slot->second->runtimes();
-    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend(); ++subcomponent) {
+    for (auto subcomponent = subcomponents.rbegin(); subcomponent != subcomponents.rend();
+      ++subcomponent)
+    {
       auto result = deactivate_descendants_for_shutdown(
-        slot->second->component_data((*subcomponent)->storage_.name, (*subcomponent)->storage_.instance_id), timeout);
+        slot->second->component_data((*subcomponent)->storage_.name,
+        (*subcomponent)->storage_.instance_id), timeout);
       if (!result.success) {
         if (first_error.success) {first_error = result;} else {
           RPP_LOG_ERROR(
@@ -1098,7 +1158,8 @@ bool BasicSlotManager<Threading>::requires_deactivation(
     (void)name;
     if (!manager->deactivation_runtimes().empty()) {return true;}
     for (const auto & subcomponent : manager->runtimes()) {
-      if (requires_deactivation(manager->component_data(subcomponent->storage_.name, subcomponent->storage_.instance_id))) {return true;}
+      if (requires_deactivation(manager->component_data(subcomponent->storage_.name,
+          subcomponent->storage_.instance_id))) {return true;}
     }
   }
   return false;
@@ -1136,7 +1197,8 @@ CallbackResult BasicSlotManager<Threading>::process_subcomponent_deactivations(
   for (const auto & [slot_name, manager] : component.subcomponent_slots_) {
     (void)slot_name;
     for (const auto & subcomponent : manager->runtimes()) {
-      auto result = manager->process_deactivations(subcomponent->storage_.name, subcomponent->storage_.instance_id, timeout);
+      auto result = manager->process_deactivations(subcomponent->storage_.name,
+          subcomponent->storage_.instance_id, timeout);
       if (!result.success && first_error.success) {first_error = result;}
     }
   }

@@ -35,7 +35,7 @@ class ComponentConstructor
 public:
   using RuntimeFactory = std::function<ComponentRuntime(const std::string &)>;
   using Validator = std::function<CallbackResult(
-      const ComponentRuntime &, const std::vector<std::shared_ptr<const ComponentRuntime>> &)>;
+        const ComponentRuntime &, const std::vector<std::shared_ptr<const ComponentRuntime>> &)>;
   using NamedValidators = std::map<std::string, Validator>;
   using RegistrationValidators = std::map<std::string, NamedValidators>;
   using DynamicComponentPolicy = std::function<bool(const std::string &, const ComponentSlot &)>;

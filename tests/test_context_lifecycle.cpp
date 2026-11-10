@@ -369,7 +369,8 @@ TEST(ContextLifecycle, CloseStopsDescendantsUnderInactiveParents)
       std::make_shared<Recorder>("middle", events), std::move(grandchildren)));
   auto context = rpp::ComponentRuntimeAccess::script_slots(std::move(children));
   ASSERT_TRUE(context.configure().success);
-  ASSERT_TRUE(rpp::ComponentRuntimeAccess::registered_components(context, "children").front()->get_context().activate_subcomponents().success);
+  ASSERT_TRUE(rpp::ComponentRuntimeAccess::registered_components(context,
+    "children").front()->get_context().activate_subcomponents().success);
   events.clear();
   ASSERT_TRUE(context.close().success);
   EXPECT_EQ(
@@ -398,7 +399,8 @@ TEST(ContextSlots, StaticOptionAllowsLifecycleButRejectsDynamicSelectionAndMembe
   EXPECT_FALSE(context.load_component("controllers", "third", "/third").success);
   EXPECT_FALSE(context.unload_component("controllers", "first").success);
   EXPECT_FALSE(context.reload_component("controllers", "first").success);
-  EXPECT_FALSE(rpp::ComponentRuntimeAccess::registered_component(context, "controllers", "second").activate().success);
+  EXPECT_FALSE(rpp::ComponentRuntimeAccess::registered_component(context, "controllers",
+    "second").activate().success);
   EXPECT_EQ(context.get_context().get_subcomponent_instance<AxisController>("controllers"), first);
   ASSERT_TRUE(context.get_context().deactivate_subcomponents().success);
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
@@ -425,7 +427,8 @@ TEST(ContextSlots, PolicyReceivesEmptySlotTypesAndFixesEachPermissionAtConstruct
   EXPECT_TRUE(context.load_component("dynamic", "candidate", "/candidate").success);
   EXPECT_FALSE(context.load_component("fixed", "candidate", "/candidate").success);
   EXPECT_FALSE(context.allows_dynamic_components());
-  const auto & candidate = rpp::ComponentRuntimeAccess::registered_component(context, "dynamic", "candidate");
+  const auto & candidate = rpp::ComponentRuntimeAccess::registered_component(context, "dynamic",
+    "candidate");
   EXPECT_TRUE(candidate.allows_dynamic_components());
   EXPECT_FALSE(candidate.allows_dynamic_components("children"));
   EXPECT_EQ(observed.size(), 2u);
@@ -445,12 +448,14 @@ TEST(ContextSlots, ParentSwitchAndUnloadKeepChildSwitchPermissionsIndependent)
   ASSERT_TRUE(root.configure().success);
   ASSERT_TRUE(root.get_context().activate_subcomponents().success);
 
-  const auto & parent = rpp::ComponentRuntimeAccess::registered_component(root, "controllers", "first");
+  const auto & parent = rpp::ComponentRuntimeAccess::registered_component(root, "controllers",
+    "first");
   ASSERT_TRUE(parent.get_context().activate_subcomponents().success);
   EXPECT_TRUE(parent.allows_dynamic_components());
   EXPECT_FALSE(parent.allows_dynamic_components("children"));
   EXPECT_FALSE(
-    rpp::ComponentRuntimeAccess::registered_component(parent, "children", "child_first").allows_dynamic_components());
+    rpp::ComponentRuntimeAccess::registered_component(parent, "children",
+    "child_first").allows_dynamic_components());
   const auto rejected = parent.switch_component("children", "child_first", "child_second", false);
   EXPECT_FALSE(rejected.success);
   EXPECT_NE(rejected.message.find("disabled"), std::string::npos);
@@ -511,7 +516,8 @@ TEST(ContextSlots, SingleAndOptionUseTheSameExclusivePolicy)
     EXPECT_EQ(info[1].state, rpp::LifecycleState::ACTIVE);
     EXPECT_EQ(
       context.get_context().get_subcomponent_instance<AxisController>("controllers"),
-      rpp::ComponentRuntimeAccess::registered_component(context, "controllers", "second").get_instance<AxisController>());
+      rpp::ComponentRuntimeAccess::registered_component(context, "controllers",
+      "second").get_instance<AxisController>());
     ASSERT_TRUE(context.unload_component("controllers", "first").success);
     ASSERT_TRUE(context.load_component("controllers", "first", "/replacement").success);
     ASSERT_TRUE(context.configure_component("controllers", "first").success);
@@ -529,7 +535,14 @@ TEST(ContextSlots, ListActivatesMultipleComponentsAndReturnsRetainableHandles)
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
   const auto children = rpp::ComponentRuntimeAccess::registered_components(context, "controllers");
   ASSERT_EQ(children.size(), 2u);
-  EXPECT_EQ(context.get_context().enumerate_subcomponent_instances<AxisController>("controllers").size(), 2u);
+  size_t enumerated = 0;
+  for (const auto & controller :
+    context.get_context().enumerate_subcomponent_instances<AxisController>("controllers"))
+  {
+    ASSERT_TRUE(controller);
+    ++enumerated;
+  }
+  EXPECT_EQ(enumerated, 2u);
   for (const auto & info : context.get_subcomponent_statuses("controllers")) {
     EXPECT_EQ(info.state, rpp::LifecycleState::ACTIVE);
   }
@@ -637,7 +650,8 @@ static_assert(HasSelfActivate<rpp::SubcomponentContext>::value);
 template<typename T, typename = void>
 struct HasSelfDeactivate : std::false_type {};
 template<typename T>
-struct HasSelfDeactivate<T, std::void_t<decltype(std::declval<T &>().deactivate())>>: std::true_type {};
+struct HasSelfDeactivate<T,
+  std::void_t<decltype(std::declval<T &>().deactivate())>>: std::true_type {};
 static_assert(!HasSelfDeactivate<rpp::ComponentContext>::value);
 static_assert(HasSelfDeactivate<rpp::SubcomponentContext>::value);
 template<typename T, typename = void>
@@ -661,16 +675,17 @@ TEST(ContextLifecycle, ChildTransitionsAreSynchronousAndSelfDeactivationWaitsFor
   auto plugin = std::make_shared<Recorder>("plugin", events);
   auto runtime = managed_recorder(plugin);
   ASSERT_TRUE(runtime.configure().success);
-  const auto retained_view = runtime.get_context().enumerate_subcomponent_contexts("controllers").front();
+  const auto retained_view = *runtime.get_context().enumerate_subcomponent_contexts(
+    "controllers").begin();
   const auto & child = *retained_view;
   EXPECT_FALSE(child.is_active());
   ASSERT_TRUE(child.activate().success);
   events.clear();
   runtime.get_context().with_active_component<Recorder>("controllers", "plugin", [&](auto &) {
-    ASSERT_TRUE(plugin->context->request_deactivation().success);
-    ASSERT_TRUE(plugin->context->request_deactivation().success);
-    EXPECT_TRUE(child.is_active());
-    EXPECT_TRUE(events.empty());
+      ASSERT_TRUE(plugin->context->request_deactivation().success);
+      ASSERT_TRUE(plugin->context->request_deactivation().success);
+      EXPECT_TRUE(child.is_active());
+      EXPECT_TRUE(events.empty());
   });
   EXPECT_TRUE(child.is_active());
   ASSERT_TRUE(runtime.process_deactivations().success);
@@ -693,7 +708,8 @@ TEST(ContextLifecycle, ParentReceivesChildControlInsteadOfTheChildsSelfContext)
   ASSERT_TRUE(runtime.configure().success);
   const auto & child = parent->context->get_subcomponent_context("children", "test_child_0");
   EXPECT_EQ(child.get_instance<Recorder>(), child_plugin);
-  const auto retained_view = parent->context->enumerate_subcomponent_contexts("children").front();
+  const auto retained_view = *parent->context->enumerate_subcomponent_contexts(
+    "children").begin();
   auto moved = std::move(runtime);
   EXPECT_EQ(retained_view.get(), &child);
   EXPECT_EQ(&parent->context->get_subcomponent_context("children", "test_child_0"), &child);
@@ -729,19 +745,21 @@ TEST(ContextLifecycle, ClosedContextCannotTransitionItsReplacement)
   auto original = std::make_shared<Recorder>("original", events);
   auto replacement = std::make_shared<Recorder>("replacement", events);
   auto runtime = managed_recorder(original, [&](const std::string &) {
-    return rpp::ComponentRuntimeAccess::named(replacement, "plugin");
+        return rpp::ComponentRuntimeAccess::named(replacement, "plugin");
   });
   ASSERT_TRUE(runtime.configure().success);
   const auto old_runtime =
     rpp::ComponentRuntimeAccess::registered_components(runtime, "controllers").front();
   const auto * old_view = original->context;
-  const auto old_child = runtime.get_context().enumerate_subcomponent_contexts("controllers").front();
+  const auto old_child = *runtime.get_context().enumerate_subcomponent_contexts(
+    "controllers").begin();
   ASSERT_TRUE(runtime.unload_component("controllers", "plugin").success);
   EXPECT_FALSE(old_runtime->activate().success);
   EXPECT_THROW(old_runtime->get_instance<Recorder>(), rpp::LifecycleError);
   ASSERT_TRUE(runtime.load_component("controllers", "plugin", "/replacement").success);
   ASSERT_TRUE(runtime.configure_component("controllers", "plugin").success);
-  const auto new_child = runtime.get_context().enumerate_subcomponent_contexts("controllers").front();
+  const auto new_child = *runtime.get_context().enumerate_subcomponent_contexts(
+    "controllers").begin();
   EXPECT_NE(old_child, new_child);
   EXPECT_FALSE(old_runtime->activate().success);
   EXPECT_THROW(old_child->activate(), rpp::LifecycleError);

@@ -168,7 +168,8 @@ struct ControllerState {int value = 0;};
 class ScenarioController : public rpp::LifecyclePlugin<ControllerState>
 {
 public:
-  ScenarioController(std::string name, EventLog & log) : name(std::move(name)), log(log) {}
+  ScenarioController(std::string name, EventLog & log)
+  : name(std::move(name)), log(log) {}
   std::string name;
   EventLog & log;
   ControllerState state;

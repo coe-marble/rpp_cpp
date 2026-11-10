@@ -19,9 +19,9 @@ public:
   std::vector<std::shared_ptr<Localizer>> plugins;
   std::shared_ptr<rpp::BasicSlotManager<Threading>> manager_owner =
     std::make_shared<rpp::BasicSlotManager<Threading>>([this](const std::string &) {
-      auto plugin = std::make_shared<Localizer>();
-      plugins.push_back(plugin);
-      return rpp::ComponentRuntimeAccess::plugin<Threading>(plugin);
+        auto plugin = std::make_shared<Localizer>();
+        plugins.push_back(plugin);
+        return rpp::ComponentRuntimeAccess::plugin<Threading>(plugin);
     }, rpp::ActivationPolicy::MULTIPLE, true);
   rpp::BasicSlotManager<Threading> & manager = *manager_owner;
 
@@ -40,8 +40,8 @@ TEST(SlotManagerRecovery, FailedLoadCleanupPreservesErrorAndAllowsUnloadRetry)
 {
   bool fail_load = true;
   auto manager_owner = std::make_shared<rpp::SlotManager>([&](const std::string &) {
-      if (fail_load) {throw std::runtime_error("load rejected");}
-      return rpp::ComponentRuntimeAccess::plugin(std::make_shared<Localizer>());
+        if (fail_load) {throw std::runtime_error("load rejected");}
+        return rpp::ComponentRuntimeAccess::plugin(std::make_shared<Localizer>());
     }, rpp::ActivationPolicy::MULTIPLE, true);
   auto & manager = *manager_owner;
   EXPECT_FALSE(manager.load("localizer", "/workspace/localizer").success);
@@ -140,17 +140,17 @@ TEST_F(ConcurrentManagerTest, LifecycleCallbacksDoNotHoldTheSlotGate)
   auto entered = callback_entered.get_future();
   auto completed = queried.get_future();
   auto reader = std::async(std::launch::async, [&] {
-    if (entered.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {return;}
-    const auto info = manager.get_status("localizer");
-    EXPECT_TRUE(info.transition.has_value());
-    EXPECT_FALSE(info.callable);
-    EXPECT_NE(manager.runtime("localizer"), nullptr);
-    queried.set_value();
+        if (entered.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {return;}
+        const auto info = manager.get_status("localizer");
+        EXPECT_TRUE(info.transition.has_value());
+        EXPECT_FALSE(info.callable);
+        EXPECT_NE(manager.runtime("localizer"), nullptr);
+        queried.set_value();
   });
   plugins[0]->before_deactivate = [&] {
-    callback_entered.set_value();
-    EXPECT_EQ(completed.wait_for(std::chrono::milliseconds(500)), std::future_status::ready);
-  };
+      callback_entered.set_value();
+      EXPECT_EQ(completed.wait_for(std::chrono::milliseconds(500)), std::future_status::ready);
+    };
   const auto stopped = manager.deactivate("localizer");
   // Finish the reader even when the bounded callback observation fails.
   reader.get();
@@ -178,10 +178,10 @@ TEST_F(ConcurrentManagerTest, SelfDeactivationDrainsConcurrentCallsAndRetriesAft
   std::promise<void> entered, release;
   auto released = release.get_future().share();
   auto caller = std::async(std::launch::async, [&] {
-    manager.with_active<Localizer>("localizer", [&](auto & plugin) {
-      plugin.context->request_deactivation().require_success();
-      entered.set_value();
-      released.wait();
+        manager.with_active<Localizer>("localizer", [&](auto & plugin) {
+          plugin.context->request_deactivation().require_success();
+          entered.set_value();
+          released.wait();
     });
   });
   const auto observed = entered.get_future().wait_for(std::chrono::milliseconds(500));
@@ -203,15 +203,15 @@ TEST_F(ConcurrentManagerTest, SlotGateCountsAllConcurrentCalls)
   auto first_release = release_first.get_future().share();
   auto second_release = release_second.get_future().share();
   auto first = std::async(std::launch::async, [&] {
-    manager.with_active<Localizer>("localizer", [&](auto &) {
-      first_entered.set_value();
-      first_release.wait();
+        manager.with_active<Localizer>("localizer", [&](auto &) {
+          first_entered.set_value();
+          first_release.wait();
     });
   });
   auto second = std::async(std::launch::async, [&] {
-    manager.with_active<Localizer>("localizer", [&](auto &) {
-      second_entered.set_value();
-      second_release.wait();
+        manager.with_active<Localizer>("localizer", [&](auto &) {
+          second_entered.set_value();
+          second_release.wait();
     });
   });
   const auto first_ready = first_entered.get_future().wait_for(std::chrono::milliseconds(500));

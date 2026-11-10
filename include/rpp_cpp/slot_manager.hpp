@@ -39,7 +39,8 @@ class BasicSlotManager : public std::enable_shared_from_this<BasicSlotManager<Th
 
   friend class ComponentRuntimeAccess;
   friend class BasicComponentRuntimeBuilder<Threading>;
-  template<bool, bool> friend class BasicRuntime;
+  template<bool, bool>
+  friend class BasicRuntime;
   friend class ComponentConstructor<Threading>;
   friend class ComponentContext;
   friend class SubcomponentContext;
@@ -63,7 +64,8 @@ public:
 private:
   struct Entry;
   ComponentData & component_data(const std::string & name, std::string_view instance_id) const;
-  static ComponentRuntime create_root(std::unique_ptr<ComponentData> data,
+  static ComponentRuntime create_root(
+    std::unique_ptr<ComponentData> data,
     std::shared_ptr<SlotManager> manager = {});
   std::unique_ptr<ComponentData> take_component(const ComponentRuntime & runtime);
   std::shared_ptr<ComponentRuntime> runtime_view(const Entry & item) const;
@@ -81,10 +83,16 @@ private:
   static DeactivationResult<HandoverState> deactivate_component(ComponentData & component);
   static CallbackResult activate_subcomponents(ComponentData & component);
   static CallbackResult deactivate_subcomponents(ComponentData & component, Timeout timeout);
-  static CallbackResult deactivate_descendants_for_shutdown(ComponentData & component, Timeout timeout);
+  static CallbackResult deactivate_descendants_for_shutdown(
+    ComponentData & component,
+    Timeout timeout);
   static bool requires_deactivation(ComponentData & component);
-  CallbackResult process_deactivations(const std::string & name, std::string_view instance_id, Timeout timeout);
-  static CallbackResult process_subcomponent_deactivations(ComponentData & component, Timeout timeout);
+  CallbackResult process_deactivations(
+    const std::string & name, std::string_view instance_id,
+    Timeout timeout);
+  static CallbackResult process_subcomponent_deactivations(
+    ComponentData & component,
+    Timeout timeout);
   static CallbackResult configure_external_component(ComponentData & component);
   static CallbackResult cleanup_external_component(ComponentData & component);
   static CallbackResult activate_external_component(ComponentData & component, HandoverState state);
@@ -129,7 +137,8 @@ private:
     std::unique_ptr<ComponentData> prepared_component = {});
   CallbackResult load_impl(
     const std::string &, const std::string &, bool initial,
-    const detail::ComponentBuildRequest * request = nullptr, const PreparedComponents * prepared = nullptr,
+    const detail::ComponentBuildRequest * request = nullptr,
+    const PreparedComponents * prepared = nullptr,
     std::unique_ptr<ComponentData> prepared_component = {});
 
   void release_call(Entry &);
@@ -139,7 +148,8 @@ private:
     std::shared_ptr<Plugin> instance;
     std::shared_ptr<Entry> entry;
     BasicSlotManager * owner;
-    ActiveCall(std::shared_ptr<Plugin> plugin, std::shared_ptr<Entry> item,
+    ActiveCall(
+      std::shared_ptr<Plugin> plugin, std::shared_ptr<Entry> item,
       BasicSlotManager & manager)
     : instance(std::move(plugin)), entry(std::move(item)), owner(&manager) {}
 
@@ -225,7 +235,9 @@ public:
 
   /// Synchronously configure an unconfigured entry and its subcomponents.
   /// Optional instance UUID rejects stale handles; failure leaves ERROR.
-  CallbackResult configure(const std::string & name, std::optional<std::string_view> expected_instance_id = {});
+  CallbackResult configure(
+    const std::string & name,
+    std::optional<std::string_view> expected_instance_id = {});
 
   /// Synchronously activate a configured entry, optionally using handover state.
   /// Exclusive slots reject a second active entry; expected UUID rejects stale handles.
@@ -242,7 +254,9 @@ public:
 
   /// Synchronously clean up an entry after active work stops; success leaves UNCONFIGURED.
   /// Optional instance UUID rejects stale handles.
-  CallbackResult cleanup(const std::string & name, std::optional<std::string_view> expected_instance_id = {});
+  CallbackResult cleanup(
+    const std::string & name,
+    std::optional<std::string_view> expected_instance_id = {});
 
   /// Drain guards, stop remaining work, clean up and release an entry in a dynamic slot.
   /// Failure retains resources for retry; the registration record remains available for loading.

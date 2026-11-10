@@ -40,7 +40,7 @@ public:
     std::function<CallbackResult(const std::string &)> unload;
     std::function<CallbackResult(const std::string &, bool)> reload;
     std::function<CallbackResult(
-      const std::string &, const std::string &, bool)> switch_components;
+        const std::string &, const std::string &, bool)> switch_components;
     std::function<CallbackResult()> close;
     // Rebind the generated adapter to the selected runtime before handing out
     // its typed capability.
@@ -133,7 +133,7 @@ public:
   {
     auto control = slot(connection_name);
     return control ? invoke(control->close) :
-      CallbackResult::failure("Unknown hosted slot connection: " + connection_name);
+           CallbackResult::failure("Unknown hosted slot connection: " + connection_name);
   }
 
   ::kj::Promise<void> getProtocolVersion(GetProtocolVersionContext context) override
@@ -196,13 +196,18 @@ public:
     const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
     auto control = slot_for_instance(instance_id);
     CallbackResult result = control ? CallbackResult{} :
-      CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    CallbackResult::failure("Unknown hosted component instance: " + instance_id);
     HandoverState state;
     if (result.success) {
       auto wire = context.getParams().getState();
-      result = control->adapter->decode_lifecycle_state__(wire.getSchemaId(), wire.getPayload(), state);
+      result = control->adapter->decode_lifecycle_state__(wire.getSchemaId(), wire.getPayload(),
+          state);
     }
-    if (result.success) {result = invoke([&] {return control->activate(instance_id, std::move(state));});}
+    if (result.success) {
+      result = invoke([&] {
+            return control->activate(instance_id, std::move(state));
+                                                                                                      });
+    }
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
@@ -213,9 +218,15 @@ public:
     const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
     auto control = slot_for_instance(instance_id);
     CallbackResult result = control ? CallbackResult{} :
-      CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    CallbackResult::failure("Unknown hosted component instance: " + instance_id);
     DeactivationResult<HandoverState> stopped;
-    if (result.success) {try {stopped = control->deactivate(instance_id); result = stopped.result;} catch (const std::exception & e) {result = CallbackResult::failure(e.what());}}
+    if (result.success) {
+      try {
+        stopped = control->deactivate(instance_id); result = stopped.result;
+      } catch (const std::exception & e) {
+        result = CallbackResult::failure(e.what());
+      }
+    }
     auto lifecycle = output.initResult(); write_result(lifecycle, result);
     if (result.success && stopped.state) {
       auto wire = output.initState();
@@ -234,7 +245,8 @@ public:
     const auto connection_name = std::string(component.getConnectionName().cStr());
     auto control = slot(connection_name);
     const auto result = control ? invoke([&] {
-      return control->load(component.getComponentPath().cStr(), component.getPluginName().cStr());
+          return control->load(component.getComponentPath().cStr(),
+          component.getPluginName().cStr());
     }) : CallbackResult::failure("Unknown hosted slot connection: " + connection_name);
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
@@ -255,7 +267,7 @@ public:
     const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
     auto control = slot_for_instance(instance_id);
     const auto result = control ? invoke([&] {
-      return control->reload(instance_id, context.getParams().getTransferState());
+          return control->reload(instance_id, context.getParams().getTransferState());
     }) : CallbackResult::failure("Unknown hosted component instance: " + instance_id);
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
@@ -267,7 +279,7 @@ public:
     const auto connection_name = std::string(params.getConnectionName().cStr());
     auto control = slot(connection_name);
     const auto result = control ? invoke([&] {
-      return control->switch_components(
+          return control->switch_components(
         params.getSourceInstanceId().cStr(), params.getTargetInstanceId().cStr(),
         params.getTransferState());
     }) : CallbackResult::failure("Unknown hosted slot connection: " + connection_name);

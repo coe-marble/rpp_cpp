@@ -10,7 +10,9 @@ BasicRuntime<Concurrent, IsScript>::BasicRuntime(Storage storage)
 : storage_(std::move(storage))
 {
   if constexpr (IsScript) {
-    if (!storage_ || storage_->instance_) {throw LifecycleError("Script storage requires a slot collection without a root plugin");}
+    if (!storage_ || storage_->instance_) {
+      throw LifecycleError("Script storage requires a slot collection without a root plugin");
+    }
     storage_->context_ = std::shared_ptr<ComponentContext>(new ComponentContext(*storage_));
   }
 }
@@ -24,7 +26,10 @@ void BasicRuntime<Concurrent, IsScript>::release_owned_tree() noexcept
 {
   if constexpr (IsScript) {
     if (!storage_) {return;}
-    try {(void)close_owned_slots(Timeout::zero());} catch (...) {}
+    try {
+      (void)close_owned_slots(Timeout::zero());
+    } catch (...) {
+    }
     if (!storage_->resources_released_) {
       // Failed shutdown must retain active entries. Explicit close() permits retry.
       storage_->context_->detach();
@@ -32,7 +37,10 @@ void BasicRuntime<Concurrent, IsScript>::release_owned_tree() noexcept
     }
   } else {
     if (storage_.owns_tree && storage_.slot) {
-      try {(void)close_owned_slots(Timeout::zero());} catch (...) {}
+      try {
+        (void)close_owned_slots(Timeout::zero());
+      } catch (...) {
+      }
     }
   }
 }
@@ -45,7 +53,8 @@ BasicRuntime<Concurrent, IsScript>::BasicRuntime(Runtime && other) noexcept
 }
 
 template<bool Concurrent, bool IsScript>
-BasicRuntime<Concurrent, IsScript> & BasicRuntime<Concurrent, IsScript>::operator=(Runtime && other) noexcept
+BasicRuntime<Concurrent, IsScript> & BasicRuntime<Concurrent,
+  IsScript>::operator=(Runtime && other) noexcept
 {
   if (this == &other) {return *this;}
   release_owned_tree();
@@ -67,17 +76,20 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::process_deactivations(Timeout
 template<bool Concurrent, bool IsScript>
 bool BasicRuntime<Concurrent, IsScript>::allows_dynamic_components() const
 {
-  if constexpr (IsScript) {return false;}
-  else {return storage_.slot && storage_.slot->allows_dynamic_components();}
+  if constexpr (IsScript) {return false;} else {
+    return storage_.slot && storage_.slot->allows_dynamic_components();
+  }
 }
 template<bool Concurrent, bool IsScript>
-bool BasicRuntime<Concurrent, IsScript>::allows_dynamic_components(const std::string & slot_name) const
+bool BasicRuntime<Concurrent,
+  IsScript>::allows_dynamic_components(const std::string & slot_name) const
 {
   return slot(slot_name).allows_dynamic_components();
 }
 
 template<bool Concurrent, bool IsScript>
-std::vector<ComponentStatus> BasicRuntime<Concurrent, IsScript>::get_subcomponent_statuses(const std::string & slot_name) const
+std::vector<ComponentStatus> BasicRuntime<Concurrent,
+  IsScript>::get_subcomponent_statuses(const std::string & slot_name) const
 {return slot(slot_name).list();}
 
 template<bool Concurrent, bool IsScript>
@@ -143,8 +155,9 @@ typename BasicRuntime<Concurrent, IsScript>::SlotManager & BasicRuntime<Concurre
 template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::configure() const
 {
-  if constexpr (IsScript) {return SlotManager::configure_subcomponents(component_data());}
-  else {return storage_.slot->configure(storage_.name, storage_.instance_id);}
+  if constexpr (IsScript) {return SlotManager::configure_subcomponents(component_data());} else {
+    return storage_.slot->configure(storage_.name, storage_.instance_id);
+  }
 }
 
 template<bool Concurrent, bool IsScript>
@@ -152,31 +165,34 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::activate(HandoverState state)
 {
   if constexpr (IsScript) {
     (void)component_data();
-    return state.has_value() ? CallbackResult::failure("A script has no plugin handover state") : CallbackResult{};
+    return state.has_value() ? CallbackResult::failure("A script has no plugin handover state") :
+           CallbackResult{};
   } else {
     return storage_.slot->activate(storage_.name, std::move(state), storage_.instance_id);
   }
 }
 
 template<bool Concurrent, bool IsScript>
-DeactivationResult<HandoverState> BasicRuntime<Concurrent, IsScript>::deactivate(Timeout timeout) const
+DeactivationResult<HandoverState> BasicRuntime<Concurrent,
+  IsScript>::deactivate(Timeout timeout) const
 {
-  if constexpr (IsScript) {(void)component_data(); return {};}
-  else {return storage_.slot->deactivate(storage_.name, timeout, storage_.instance_id);}
+  if constexpr (IsScript) {(void)component_data(); return {};} else {
+    return storage_.slot->deactivate(storage_.name, timeout, storage_.instance_id);
+  }
 }
 
 template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::cleanup() const
 {
-  if constexpr (IsScript) {return SlotManager::cleanup_subcomponents(component_data());}
-  else {return storage_.slot->cleanup(storage_.name, storage_.instance_id);}
+  if constexpr (IsScript) {return SlotManager::cleanup_subcomponents(component_data());} else {
+    return storage_.slot->cleanup(storage_.name, storage_.instance_id);
+  }
 }
 
 template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::close()
 {
-  if constexpr (IsScript) {return close_owned_slots(Timeout::max());}
-  else {
+  if constexpr (IsScript) {return close_owned_slots(Timeout::max());} else {
     if (storage_.owns_tree) {return close_owned_slots(Timeout::max());}
     return storage_.slot->unload(storage_.name, Timeout::max(), storage_.instance_id);
   }
@@ -187,10 +203,13 @@ const ComponentContext & BasicRuntime<Concurrent, IsScript>::get_context() const
 {return *component_data().context_;}
 
 template<bool Concurrent, bool IsScript>
-typename BasicRuntime<Concurrent, IsScript>::ComponentData & BasicRuntime<Concurrent, IsScript>::component_data() const
+typename BasicRuntime<Concurrent, IsScript>::ComponentData & BasicRuntime<Concurrent,
+  IsScript>::component_data() const
 {
   if constexpr (IsScript) {
-    if (!storage_ || storage_->resources_released_) {throw LifecycleError("The script slots have been released");}
+    if (!storage_ || storage_->resources_released_) {
+      throw LifecycleError("The script slots have been released");
+    }
     return *storage_;
   } else {
     if (!storage_.slot) {throw LifecycleError("The runtime handle has been moved from");}

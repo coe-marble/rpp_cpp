@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,6 +18,10 @@
 namespace rpp
 {
 
+template<typename T>
+class SubcomponentInstanceRange;
+class SubcomponentContextRange;
+
 /**
  * Plugin-facing services and subcomponent control. Refers non-owningly to component data.
  * Each subcomponent operation delegates to that subcomponent's slot manager.
@@ -27,8 +32,10 @@ namespace rpp
  */
 class ComponentContext
 {
-  template<bool, bool> friend class BasicRuntime;
-  template<class> friend class BasicSlotManager;
+  template<bool, bool>
+  friend class BasicRuntime;
+  template<class>
+  friend class BasicSlotManager;
   friend class SubcomponentContext;
 
   using DataRef = std::variant<
@@ -47,8 +54,10 @@ class ComponentContext
   {
     if (!component_) {throw LifecycleError("The component has been released");}
     return std::visit([&](auto component) -> decltype(auto) {
-      if (component.get().resources_released_) {throw LifecycleError("The component has been released");}
-      return callback(component.get());
+               if (component.get().resources_released_) {
+                 throw LifecycleError("The component has been released");
+               }
+               return callback(component.get());
     }, *component_);
   }
 
@@ -82,10 +91,11 @@ public:
   std::shared_ptr<T> get_subcomponent_instance(
     const std::string & slot_name, std::optional<std::string> component_name = std::nullopt) const;
 
-  /// Snapshot direct native C++ instances in registration order.
-  /// Throws when any loaded subcomponent in the slot is adapted.
+  /// Lazily enumerate direct native C++ instances in registration order.
+  /// Iteration throws when an entry is adapted, unloaded, or released.
   template<typename T>
-  std::vector<std::shared_ptr<T>> enumerate_subcomponent_instances(const std::string & slot_name) const;
+  SubcomponentInstanceRange<T> enumerate_subcomponent_instances(
+    const std::string & slot_name) const;
 
   /// List subcomponent slot names in sorted order, including declared empty slots.
   std::vector<std::string> list_subcomponents() const;
@@ -104,9 +114,9 @@ public:
     const std::string & slot_name,
     std::optional<std::string> component_name = std::nullopt) const;
 
-  /// Snapshot loaded subcomponent views in registration order, including inactive entries.
-  /// Shared views do not keep runtimes/plugins alive; access after detach throws.
-  std::vector<std::shared_ptr<const SubcomponentContext>> enumerate_subcomponent_contexts(
+  /// Lazily enumerate loaded subcomponent views in registration order, including inactive entries.
+  /// Iteration snapshots views but does not keep runtimes/plugins alive.
+  SubcomponentContextRange enumerate_subcomponent_contexts(
     const std::string & slot_name) const;
 
   /// Observe this component's current active state; this does not reserve future access.
@@ -136,7 +146,7 @@ public:
   auto with_active_component(
     const std::string & slot_name, const std::string & name, Callback && callback,
     std::optional<std::string_view> expected_instance_id = {}) const
-    -> std::invoke_result_t<Callback, T &>;
+  -> std::invoke_result_t<Callback, T &>;
 };
 
 /**
@@ -148,7 +158,8 @@ public:
  */
 class SubcomponentContext
 {
-  template<class> friend class BasicSlotManager;
+  template<class>
+  friend class BasicSlotManager;
   friend class ComponentContext;
   std::shared_ptr<const ComponentContext> context_;
 
@@ -159,13 +170,13 @@ class SubcomponentContext
   std::shared_ptr<T> get_native_instance() const
   {
     return context_->visit([](auto & component) {
-      if (!component.is_native_) {
-        throw LifecycleError(
+               if (!component.is_native_) {
+                 throw LifecycleError(
           "An adapted subcomponent does not expose a native C++ instance");
-      }
-      auto instance = std::static_pointer_cast<T>(component.instance_);
-      if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
-      return instance;
+               }
+               auto instance = std::static_pointer_cast<T>(component.instance_);
+               if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
+               return instance;
     });
   }
 
@@ -186,9 +197,9 @@ public:
   std::shared_ptr<T> get_instance() const
   {
     return context_->visit([](auto & component) {
-      auto instance = std::static_pointer_cast<T>(component.instance_);
-      if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
-      return instance;
+               auto instance = std::static_pointer_cast<T>(component.instance_);
+               if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
+               return instance;
     });
   }
 
@@ -214,13 +225,95 @@ public:
   const std::string & get_instance_id() const {return context_->get_instance_id();}
 };
 
+/// Owning range for lazily resolving native subcomponent instances.
+/// It snapshots views, not instances: an entry is checked when dereferenced.
+template<typename T>
+class SubcomponentInstanceRange
+{
+  using Contexts = std::vector<std::shared_ptr<const SubcomponentContext>>;
+  std::shared_ptr<const Contexts> contexts_;
+
+public:
+  class iterator
+  {
+    std::shared_ptr<const Contexts> contexts_;
+    size_t position_ = 0;
+
+public:
+    using value_type = std::shared_ptr<T>;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
+    iterator() = default;
+    iterator(std::shared_ptr<const Contexts> contexts, size_t position)
+    : contexts_(std::move(contexts)), position_(position) {}
+
+    value_type operator*() const
+    {
+      const auto & context = contexts_->at(position_);
+      if (!context->is_native()) {
+        throw LifecycleError("An adapted subcomponent does not expose a native C++ instance");
+      }
+      return context->template get_instance<T>();
+    }
+
+    iterator & operator++() {++position_; return *this;}
+    bool operator==(const iterator & other) const
+    {return contexts_ == other.contexts_ && position_ == other.position_;}
+    bool operator!=(const iterator & other) const {return !(*this == other);}
+  };
+
+  explicit SubcomponentInstanceRange(Contexts contexts)
+  : contexts_(std::make_shared<const Contexts>(std::move(contexts))) {}
+
+  iterator begin() const {return {contexts_, 0};}
+  iterator end() const {return {contexts_, contexts_->size()};}
+};
+
+/// Owning range for lazily enumerating subcomponent views.
+class SubcomponentContextRange
+{
+  using Contexts = std::vector<std::shared_ptr<const SubcomponentContext>>;
+  std::shared_ptr<const Contexts> contexts_;
+
+public:
+  class iterator
+  {
+    std::shared_ptr<const Contexts> contexts_;
+    size_t position_ = 0;
+
+public:
+    using value_type = std::shared_ptr<const SubcomponentContext>;
+    using difference_type = std::ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
+    iterator() = default;
+    iterator(std::shared_ptr<const Contexts> contexts, size_t position)
+    : contexts_(std::move(contexts)), position_(position) {}
+
+    const value_type & operator*() const {return contexts_->at(position_);}
+    iterator & operator++() {++position_; return *this;}
+    bool operator==(const iterator & other) const
+    {return contexts_ == other.contexts_ && position_ == other.position_;}
+    bool operator!=(const iterator & other) const {return !(*this == other);}
+  };
+
+  explicit SubcomponentContextRange(Contexts contexts)
+  : contexts_(std::make_shared<const Contexts>(std::move(contexts))) {}
+
+  iterator begin() const {return {contexts_, 0};}
+  iterator end() const {return {contexts_, contexts_->size()};}
+};
+
 template<typename T>
 T ComponentContext::get_parameter(const std::string & name) const
 {
   return visit([&](auto & component) {
-    const auto & parameters = component.parameters_;
-    if (!parameters.contains(name)) {throw std::runtime_error("Parameter '" + name + "' not found.");}
-    return parameters.template get<T>(name);
+             const auto & parameters = component.parameters_;
+             if (!parameters.contains(name)) {
+               throw std::runtime_error("Parameter '" + name + "' not found.");
+             }
+             return parameters.template get<T>(name);
   });
 }
 
@@ -229,23 +322,18 @@ std::shared_ptr<T> ComponentContext::get_subcomponent_instance(
   const std::string & slot_name, std::optional<std::string> component_name) const
 {
   return visit([&](auto & component) {
-    return component.subcomponent_slot(slot_name).subcomponent_context(component_name)->
-      template get_native_instance<T>();
+             return component.subcomponent_slot(slot_name).subcomponent_context(component_name)->
+                    template get_native_instance<T>();
   });
 }
 
 template<typename T>
-std::vector<std::shared_ptr<T>> ComponentContext::enumerate_subcomponent_instances(
+SubcomponentInstanceRange<T> ComponentContext::enumerate_subcomponent_instances(
   const std::string & slot_name) const
 {
   return visit([&](auto & component) {
-    std::vector<std::shared_ptr<T>> instances;
-    for (const auto & subcomponent :
-      component.subcomponent_slot(slot_name).subcomponent_contexts())
-    {
-      instances.push_back(subcomponent->template get_native_instance<T>());
-    }
-    return instances;
+             return SubcomponentInstanceRange<T>(
+      component.subcomponent_slot(slot_name).subcomponent_contexts());
   });
 }
 
@@ -255,7 +343,7 @@ auto ComponentContext::with_active_component(
   std::optional<std::string_view> expected_instance_id) const -> std::invoke_result_t<Callback, T &>
 {
   return visit([&](auto & component) -> std::invoke_result_t<Callback, T &> {
-    return component.subcomponent_slot(slot_name).template with_active<T>(
+             return component.subcomponent_slot(slot_name).template with_active<T>(
       name, std::forward<Callback>(callback), expected_instance_id);
   });
 }

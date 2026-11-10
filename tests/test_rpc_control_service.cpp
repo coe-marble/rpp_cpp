@@ -40,7 +40,7 @@ rpp::RpcControlService::SlotControl test_slot_control(
     [manager] {return manager->list();},
     [loader = std::move(loader)](const std::string & path, const std::string & plugin) {
       return loader ? loader(path, plugin) :
-        rpp::CallbackResult::failure("Test slot has no component loader");
+             rpp::CallbackResult::failure("Test slot has no component loader");
     },
     [manager, name_for, missing](const std::string & instance_id) {
       auto name = name_for(instance_id);
@@ -54,14 +54,16 @@ rpp::RpcControlService::SlotControl test_slot_control(
       auto name = name_for(instance_id);
       return name ? manager->activate(*name, std::move(state), instance_id) : missing(instance_id);
     },
-    [manager, name_for, missing](const std::string & instance_id) -> rpp::DeactivationResult<rpp::HandoverState> {
+    [manager, name_for,
+      missing](const std::string & instance_id) -> rpp::DeactivationResult<rpp::HandoverState> {
       auto name = name_for(instance_id);
       return name ? manager->deactivate(*name, std::chrono::milliseconds::max(), instance_id) :
-        rpp::DeactivationResult<rpp::HandoverState>{missing(instance_id), {}};
+             rpp::DeactivationResult<rpp::HandoverState>{missing(instance_id), {}};
     },
     [manager, name_for, missing](const std::string & instance_id) {
       auto name = name_for(instance_id);
-      return name ? manager->unload(*name, std::chrono::milliseconds::max(), instance_id) : missing(instance_id);
+      return name ? manager->unload(*name, std::chrono::milliseconds::max(),
+          instance_id) : missing(instance_id);
     },
     [manager, name_for, missing](const std::string & instance_id, bool transfer_state) {
       auto name = name_for(instance_id);
@@ -144,7 +146,7 @@ void exercise_remote_lifecycle_handover()
   EXPECT_TRUE(cleanup.send().wait(io.waitScope).getResult().getSuccess());
   EXPECT_EQ(plugin->activated_with, (std::vector<std::string>{"initial-state", "returned-state"}));
   EXPECT_EQ(plugin->events, (std::vector<std::string>{
-    "configure", "activate", "deactivate", "activate", "deactivate", "cleanup"}));
+      "configure", "activate", "deactivate", "activate", "deactivate", "cleanup"}));
 }
 
 template<class Threading>
@@ -183,7 +185,7 @@ void exercise_remote_slot_management()
       auto response = request.send().wait(io.waitScope);
       auto result = response.getResult();
       return rpp::CallbackResult{
-        result.getSuccess(), std::string(result.getMessage().cStr())};
+      result.getSuccess(), std::string(result.getMessage().cStr())};
     };
   const auto list = [&] {
       auto request = client.listComponentsRequest();
@@ -216,7 +218,8 @@ void exercise_remote_slot_management()
   switch_request.setTargetInstanceId(second_id);
   switch_request.setTransferState(true);
   ASSERT_TRUE(switch_request.send().wait(io.waitScope).getResult().getSuccess());
-  ASSERT_EQ(plugins["second"].front()->activated_with, (std::vector<std::string>{"returned-state"}));
+  ASSERT_EQ(plugins["second"].front()->activated_with,
+    (std::vector<std::string>{"returned-state"}));
 
   auto unload = client.unloadComponentRequest();
   unload.setInstanceId(first_id);
@@ -275,8 +278,10 @@ TEST(RpcControlService, CallbackExceptionsBecomeLifecycleFailures)
   auto adapter = std::make_shared<RemoteServerAdapter>();
   server->register_slot("root", {
     adapter,
-    [] {return std::vector<rpp::ComponentStatus>{
-      {"root", "", "root-instance", rpp::LifecycleState::UNCONFIGURED, {}, {}, false, 0}};},
+    [] {
+      return std::vector<rpp::ComponentStatus>{
+      {"root", "", "root-instance", rpp::LifecycleState::UNCONFIGURED, {}, {}, false, 0}};
+    },
     [](const std::string &, const std::string &) {return rpp::CallbackResult{};},
     [&](const std::string &) -> rpp::CallbackResult {
       ++attempts;
@@ -328,7 +333,8 @@ TEST(RpcControlService, NativeLifecycleHappyPath)
 
   EXPECT_FALSE(rpp::ComponentRuntimeAccess::has_external_component_process(runtime));
   ASSERT_TRUE(runtime.configure().success);
-  ASSERT_TRUE(runtime.activate(rpp::HandoverState(RemoteState::Const::named("native-state"))).success);
+  ASSERT_TRUE(runtime.activate(rpp::HandoverState(RemoteState::Const::named(
+    "native-state"))).success);
   ASSERT_TRUE(runtime.deactivate().result.success);
   ASSERT_TRUE(runtime.cleanup().success);
   EXPECT_EQ(plugin->activated_with, (std::vector<std::string>{"native-state"}));

@@ -45,14 +45,16 @@ public:
  * Services and subcomponent access are exposed through get_context().
  */
 template<bool Concurrent, bool IsScript>
-class BasicRuntime : public detail::RootInstanceAccess<BasicRuntime<Concurrent, IsScript>, !IsScript>
+class BasicRuntime : public detail::RootInstanceAccess<BasicRuntime<Concurrent, IsScript>,
+    !IsScript>
 {
   using Runtime = BasicRuntime<Concurrent, IsScript>;
   using Threading = std::conditional_t<Concurrent, rpp::Concurrent, SingleThreaded>;
   using SlotManager = BasicSlotManager<Threading>;
   using ComponentData = detail::ComponentData<Threading>;
 
-  template<class, bool> friend class detail::RootInstanceAccess;
+  template<class, bool>
+  friend class detail::RootInstanceAccess;
   friend class ComponentRuntimeAccess;
   friend class BasicSlotManager<Threading>;
   friend class BasicComponentRuntimeBuilder<Threading>;

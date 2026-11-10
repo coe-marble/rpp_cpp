@@ -15,7 +15,8 @@ using Localizer = rpp::testing::SnapshotLocalizer;
 
 struct MoveOnlyEstimate
 {
-  explicit MoveOnlyEstimate(int value) : value(std::make_unique<int>(value)) {}
+  explicit MoveOnlyEstimate(int value)
+  : value(std::make_unique<int>(value)) {}
   MoveOnlyEstimate(MoveOnlyEstimate &&) noexcept = default;
   MoveOnlyEstimate & operator=(MoveOnlyEstimate &&) noexcept = default;
   MoveOnlyEstimate(const MoveOnlyEstimate &) = delete;
@@ -26,7 +27,8 @@ struct MoveOnlyEstimate
 class MoveOnlyLocalizer final : public rpp::LifecyclePlugin<MoveOnlyEstimate>
 {
 public:
-  explicit MoveOnlyLocalizer(int value) : estimate(value) {}
+  explicit MoveOnlyLocalizer(int value)
+  : estimate(value) {}
   MoveOnlyEstimate estimate;
 
   rpp::CallbackResult on_activate(const std::optional<MoveOnlyEstimate> & state) override

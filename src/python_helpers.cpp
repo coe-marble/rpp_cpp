@@ -11,11 +11,11 @@ void ensure_python_interpreter()
 {
   static std::once_flag initialized;
   std::call_once(initialized, [] {
-    pybind11::initialize_interpreter();
+      pybind11::initialize_interpreter();
     // initialize_interpreter() leaves the GIL held by whichever application
     // thread first loads parameters. Release it so later component/server
     // threads can acquire it normally.
-    PyEval_SaveThread();
+      PyEval_SaveThread();
   });
 }
 

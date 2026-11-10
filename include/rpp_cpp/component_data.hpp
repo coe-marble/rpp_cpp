@@ -22,14 +22,17 @@ struct ComponentData
 {
   using SlotManager = BasicSlotManager<Threading>;
   using SlotManagers = std::map<std::string, std::shared_ptr<BasicSlotManager<Threading>>>;
-  ComponentData(std::shared_ptr<Plugin> instance, params::Parameters parameters,
+  ComponentData(
+    std::shared_ptr<Plugin> instance, params::Parameters parameters,
     std::shared_ptr<ExternalComponentProcess> process, SlotManagers slots,
     const ClockOptions & clock_options, bool is_native);
   static std::string create_instance_id();
   SlotManager & subcomponent_slot(const std::string & name) const
   {
     auto found = subcomponent_slots_.find(name);
-    if (found == subcomponent_slots_.end()) {throw LifecycleError("Component slot '" + name + "' not found");}
+    if (found == subcomponent_slots_.end()) {
+      throw LifecycleError("Component slot '" + name + "' not found");
+    }
     return *found->second;
   }
 

@@ -141,16 +141,13 @@ else()
   message(STATUS "rpp CLI not found; skipping RPP_CPP_CORE_PATH configuration.")
 endif()
 
-
-set(OVERRIDE_RPP_TEST false)
 if(BUILD_TESTING AND ament_cmake_FOUND)
 
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_gtest REQUIRED)
 
-  set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/rpp_autogen")
-  set(INCLUDE_GENERATED_DIR "${GENERATED_DIR}/.rpp/interfaces/cpp")
-
+  # rpp_testing owns the precompiled fixture. It is prepared explicitly by
+  # rpp_testing/scripts/build_rpp_autogen.sh and is never generated here.
   execute_process(
       COMMAND ${Python3_EXECUTABLE} -c
       "import os, rpp_testing; print(list(rpp_testing.__path__)[0])"
@@ -166,9 +163,12 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
         "Please ensure that the rpp_testing package is installed and accessible in your Python environment.\n"
       )
   endif()
-  set(RPP_ARGS test setup_tmp_rpp_with_test_plugins ${GENERATED_DIR})
-  if(OVERRIDE_RPP_TEST)
-    list(APPEND RPP_ARGS --override)
+  set(GENERATED_DIR "${RPP_TESTING_PATH}/rpp_autogen")
+  set(INCLUDE_GENERATED_DIR "${GENERATED_DIR}/.rpp/interfaces/cpp")
+  if(NOT IS_DIRECTORY "${INCLUDE_GENERATED_DIR}")
+    message(FATAL_ERROR
+      "Missing precompiled RPP test fixture at '${GENERATED_DIR}'.\n"
+      "Run rpp_testing/scripts/build_rpp_autogen.sh --local first.")
   endif()
 
   execute_process(
@@ -182,36 +182,19 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
     message(FATAL_ERROR "Could not find the rpp_common plugin-type schemas.")
   endif()
 
-  # Discover inputs at configuration time; their generated outputs do not exist
-  # until run_rpp_autogen finishes during the build.
+  # The precompiled fixture contains Cap'n Proto source generated from these
+  # schemas. Test compilation uses those sources directly.
   file(GLOB TEST_SCHEMAS CONFIGURE_DEPENDS "${COMMON_PLUGIN_TYPES_DIR}/*/*.capnp")
-  file(GLOB_RECURSE RPP_CPP_INTERFACE_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/rpp_cpp/*.hpp")
   set(GENERATED_SOURCES)
   foreach(SCHEMA IN LISTS TEST_SCHEMAS)
     file(RELATIVE_PATH SCHEMA_PATH "${COMMON_PLUGIN_TYPES_DIR}" "${SCHEMA}")
-    list(APPEND GENERATED_SOURCES "${INCLUDE_GENERATED_DIR}/capnp_gen/${SCHEMA_PATH}.c++")
+    set(GENERATED_SOURCE "${INCLUDE_GENERATED_DIR}/capnp_gen/${SCHEMA_PATH}.c++")
+    if(NOT EXISTS "${GENERATED_SOURCE}")
+      message(FATAL_ERROR
+        "Precompiled fixture is missing '${GENERATED_SOURCE}'. Regenerate rpp_testing/rpp_autogen.")
+    endif()
+    list(APPEND GENERATED_SOURCES "${GENERATED_SOURCE}")
   endforeach()
-  set_source_files_properties(${GENERATED_SOURCES} PROPERTIES GENERATED TRUE)
-
-  add_custom_command(
-    OUTPUT "${GENERATED_DIR}/gen_checked.stamp"
-    BYPRODUCTS ${GENERATED_SOURCES}
-    DEPENDS ${RPP_CPP_INTERFACE_HEADERS}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
-    COMMAND rpp ${RPP_ARGS}
-    COMMAND ${CMAKE_COMMAND} -E touch "${GENERATED_DIR}/gen_checked.stamp"
-    COMMENT "Running test autogeneration linked to rpp_cpp_core..."
-    VERBATIM
-  )
-
-  add_custom_target(run_rpp_autogen
-    DEPENDS "${GENERATED_DIR}/gen_checked.stamp"
-  )
-  add_dependencies(run_rpp_autogen rpp_cpp_core rpp_cpp)
-  if(TARGET write_rpp_cpp_core_path)
-    add_dependencies(run_rpp_autogen write_rpp_cpp_core_path)
-  endif()
 
   # ---------------------------------------------------------------------------
   # STEP 3: BUILD TEST TARGETS
@@ -220,8 +203,6 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
 
 
   ament_add_gtest(test_instance_plugin_cpp tests/test_instance_plugin_cpp.cpp)
-  add_dependencies(test_instance_plugin_cpp run_rpp_autogen)
-
   target_sources(test_instance_plugin_cpp PRIVATE ${GENERATED_SOURCES})
 
   target_include_directories(test_instance_plugin_cpp PRIVATE include ${INCLUDE_GENERATED_DIR})

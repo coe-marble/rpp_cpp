@@ -649,20 +649,13 @@ TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
     auto plugin_client = dynamic_cast<rpp_testing::MotionController2D *>(plugin_client_raw.get());
     ASSERT_TRUE(plugin_client != nullptr);
 
-    rpp::ComponentCallExecutor client_executor;
-    client_executor.start();
-    auto context = client_executor.call([&](kj::AsyncIoContext & io) {
-        return std::make_unique<rpp::RppRuntimeClientContext>(
-            host, port, std::chrono::seconds(5), &io);
-    });
-    ASSERT_TRUE(client_executor.call([&](kj::AsyncIoContext &) {
-      return plugin_client_raw->connect_adapter_client__(
-            *context, std::ref(client_executor));
-    }));
-    auto runtime_client = client_executor.call([&](kj::AsyncIoContext &) {
-        return std::make_unique<rpp::RpcControlClient>(*context);
-    });
+    auto context = std::make_unique<rpp::RppRuntimeClientContext>(
+      host, port, std::chrono::seconds(5));
+    ASSERT_TRUE(plugin_client_raw->connect_adapter_client__(*context));
+    auto runtime_client = std::make_unique<rpp::RpcControlClient>(*context);
 
+    auto configured = runtime_client->configure_component("test_connection");
+    ASSERT_TRUE(configured.success) << configured.message;
 
     rpp_testing::MotionController2D::Odometry2D odom_msg;
     odom_msg.pose().position().x() = 1.0;
@@ -677,15 +670,12 @@ TEST_F(PythonAdapterTest, TestPluginAdapterWithPythonPlugin) {
 
     is_valid = plugin_client->validate(odom_msg);
 
-    client_executor.call([&](kj::AsyncIoContext &) {
-      runtime_client->shutdown();
-    });
-    client_executor.call([&](kj::AsyncIoContext &) {
-      runtime_client.reset();
-      plugin_client_raw.reset();
-      context.reset();
-    });
-    client_executor.stop();
+    auto cleaned = runtime_client->cleanup_component("test_connection");
+    EXPECT_TRUE(cleaned.success) << cleaned.message;
+    runtime_client->shutdown();
+    runtime_client.reset();
+    plugin_client_raw.reset();
+    context.reset();
     try {
     process.wait(std::chrono::seconds(5));
     } catch (const std::exception &) {

@@ -47,6 +47,7 @@ public:
     ClockOptions clock;
     DynamicComponentPolicy dynamic_policy;
     RegistrationValidators validators;
+    std::map<std::string, std::map<std::string, params::ParameterValue>> parameter_overrides;
     std::shared_ptr<ExternalComponentProcessRegistry> external_servers;
   };
 

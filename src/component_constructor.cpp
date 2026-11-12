@@ -182,6 +182,20 @@ construct_component(
   {
     params::ParameterHandler handler(record.folder);
     auto module = handler.load_parameters_from_python_module();
+    const auto overrides = build_options_->parameter_overrides.find(record.plugin_name);
+    if (overrides != build_options_->parameter_overrides.end()) {
+      if (!native) {
+        throw std::invalid_argument("Parameter overrides require a native C++ plugin: " +
+          record.plugin_name);
+      }
+      for (const auto & [name, value] : overrides->second) {
+        if (plugin_info.plugin_metadata.parameters.count(name) == 0) {
+          throw std::invalid_argument("Undeclared parameter override '" + name +
+            "' for plugin '" + record.plugin_name + "'");
+        }
+        module[name] = value;
+      }
+    }
     params::ParameterHandler::resolve_params(plugin_info.plugin_metadata.parameters, module,
         parameters);
   }

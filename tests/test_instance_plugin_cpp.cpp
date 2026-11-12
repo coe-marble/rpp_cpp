@@ -24,8 +24,12 @@
 #include "rpp_cpp/component_call_executor.hpp"
 
 #include "rpp_plugin_types/rpp_testing/MotionController2D.hpp"
+#include "rpp_plugin_types/rpp_testing/MotionController2D_Adapter_Client.hpp"
+#include "rpp_plugin_types/rpp_testing/MotionController2D_Adapter_Server.hpp"
 #include "rpp_plugin_types/rpp_testing/DisturbanceGenerator2D.hpp"
 #include "rpp_plugin_types/rpp_testing/TestInterfaceAll.hpp"
+#include "rpp_plugin_types/rpp_testing/TestInterfaceAll_Adapter_Client.hpp"
+#include "rpp_plugin_types/rpp_testing/TestInterfaceAll_Adapter_Server.hpp"
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <atomic>

@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <map>
 #include <vector>
 
 #include "runtime_fwd.hpp"
@@ -50,12 +51,15 @@ public:
    */
   using DynamicComponentPolicy = typename SlotManager::DynamicComponentPolicy;
 
+  using ParameterOverrides = std::map<std::string, std::map<std::string, params::ParameterValue>>;
+
 private:
   std::shared_ptr<rpp::RppDataManager> data_manager_own_;
   rpp::RppDataManager & data_manager_;
   ClockOptions clock_options_;
   std::variant<bool, DynamicComponentPolicy> dynamic_components_;
   RegistrationValidators registration_validators_;
+  ParameterOverrides parameter_overrides_;
 
   ExternalComponentProcessRegistry external_component_process_registry_;
 
@@ -115,6 +119,16 @@ public:
    */
   void register_external_component_server(
     const std::string & language, const std::string & command);
+
+  /// Override workspace parameters for future builds, keyed by qualified plugin
+  /// name, then parameter name. Applies to every matching instance, including
+  /// nested native components. Names must be declared by the plugin; value
+  /// conversion and domain validation happen when its configuration reads them.
+  /// Existing runtimes keep their resolved parameters.
+  void set_parameter_overrides(ParameterOverrides overrides)
+  {
+    parameter_overrides_ = std::move(overrides);
+  }
 
   /// Build one prepared, unconfigured top-level component tree.
   ComponentRuntime build_component(const ComponentRequest & request);

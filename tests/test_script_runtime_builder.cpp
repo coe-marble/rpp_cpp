@@ -155,6 +155,42 @@ struct PolicyNames
 using Policies = ::testing::Types<rpp::SingleThreaded, rpp::Concurrent>;
 TYPED_TEST_SUITE(ScriptRuntimeBuilderTest, Policies, PolicyNames);
 
+TYPED_TEST(ScriptRuntimeBuilderTest, OverridesWorkspaceParametersBeforeConfiguration)
+{
+  using Builder = typename TestFixture::Builder;
+  Builder builder(*this->data_manager);
+  builder.set_parameter_overrides({{"tests::script_plugin", {{"value", 42}}}});
+  auto runtime = builder.build_script({rpp::ScriptPath{this->script_path.string()}, {}, {}});
+  ASSERT_TRUE(runtime.configure().success);
+  for (const auto & name : {"primary", "backup"}) {
+    const auto & child = runtime.get_context().get_subcomponent_context("controller", name);
+    EXPECT_EQ(child.template get_instance<ScriptBuilderPlugin>()->value, 42);
+  }
+  builder.set_parameter_overrides({});
+  auto unmodified = builder.build_script({rpp::ScriptPath{this->script_path.string()}, {}, {}});
+  ASSERT_TRUE(unmodified.configure().success);
+  EXPECT_EQ(unmodified.get_context().get_subcomponent_context("controller", "primary")
+    .template get_instance<ScriptBuilderPlugin>()->value, 10);
+  EXPECT_EQ(runtime.get_context().get_subcomponent_context("controller", "primary")
+    .template get_instance<ScriptBuilderPlugin>()->value, 42);
+}
+
+TYPED_TEST(ScriptRuntimeBuilderTest, RejectsUndeclaredParameterOverrides)
+{
+  using Builder = typename TestFixture::Builder;
+  Builder builder(*this->data_manager);
+  builder.set_parameter_overrides({{"tests::script_plugin", {{"missing", 42}}}});
+  // Script construction reports component admission failures as LifecycleError.
+  try {
+    builder.build_script({rpp::ScriptPath{this->script_path.string()}, {}, {}});
+    FAIL() << "Expected the undeclared parameter override to be rejected";
+  } catch (const rpp::LifecycleError & error) {
+    EXPECT_NE(std::string(error.what()).find(
+        "Undeclared parameter override 'missing' for plugin 'tests::script_plugin'"),
+      std::string::npos);
+  }
+}
+
 TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrivesRealPluginLifecycle)
 {
   using Builder = typename TestFixture::Builder;

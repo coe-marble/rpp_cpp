@@ -65,6 +65,7 @@ BasicComponentRuntimeBuilder<Threading>::create_constructor() const
     options->dynamic_policy = std::get<DynamicComponentPolicy>(dynamic_components_);
   }
   options->validators = registration_validators_;
+  options->parameter_overrides = parameter_overrides_;
   options->external_servers =
     std::make_shared<ExternalComponentProcessRegistry>(external_component_process_registry_);
   return std::make_shared<ComponentConstructor<Threading>>(std::move(options));

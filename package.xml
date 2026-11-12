@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>rpp_cpp</name>
-  <version>0.0.0</version>
+  <version>0.2.0</version>
   <description>C++ RPP runtime with Cap'n Proto 1.1.0 generated interfaces.</description>
   <maintainer email="luka.mandic@fer.hr">luka</maintainer>
   <license>Apache-2.0</license>

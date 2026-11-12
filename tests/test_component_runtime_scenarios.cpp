@@ -123,21 +123,21 @@ TYPED_TEST(ComponentRuntimeScenarios, ListLookupRequiresANameEvenWithOnlyOneLoad
 {
   this->build("List[controllers::Controller]");
   const auto & context = this->root->get_context();
-  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers"),
-    rpp::LifecycleError);
-  EXPECT_EQ(this->root->get_context().template get_subcomponent_instance<ScenarioController>(
-      "controllers", "a"),
+  EXPECT_THROW(context.get_subcomponent_context("controllers"), rpp::LifecycleError);
+  const auto & a_context = this->root->get_context().get_subcomponent_context("controllers", "a");
+  EXPECT_EQ(a_context.template get_instance<ScenarioController>(),
     this->controllers.at("a"));
-  EXPECT_EQ(context.template get_subcomponent_instance<ScenarioController>("controllers", "b"),
-    this->controllers.at("b"));
+  {
+    const auto & b_context = context.get_subcomponent_context("controllers", "b");
+    EXPECT_EQ(b_context.template get_instance<ScenarioController>(),
+      this->controllers.at("b"));
+  }
 
   ASSERT_TRUE(this->root->unload_component("controllers", "b").success);
-  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers"),
-    rpp::LifecycleError);
-  EXPECT_EQ(context.template get_subcomponent_instance<ScenarioController>("controllers", "a"),
+  EXPECT_THROW(context.get_subcomponent_context("controllers"), rpp::LifecycleError);
+  EXPECT_EQ(a_context.template get_instance<ScenarioController>(),
     this->controllers.at("a"));
-  EXPECT_THROW(context.template get_subcomponent_instance<ScenarioController>("controllers", "b"),
-    rpp::LifecycleError);
+  EXPECT_THROW(context.get_subcomponent_context("controllers", "b"), rpp::LifecycleError);
 }
 
 TYPED_TEST(ComponentRuntimeScenarios, RetainedSubcomponentViewDoesNotKeepPluginAlive)
@@ -301,8 +301,8 @@ TYPED_TEST(ComponentRuntimeScenarios, ExclusiveSwitchTransfersStateThenColdSwitc
   EXPECT_EQ(this->call("b"), 42);
   this->controllers.at("a")->state.value = 99;
   EXPECT_EQ(this->call("b"), 42);  // Handover is an owned snapshot.
-  EXPECT_EQ(this->root->get_context().template get_subcomponent_instance<ScenarioController>(
-      "controllers"),
+  const auto & active_context = this->root->get_context().get_subcomponent_context("controllers");
+  EXPECT_EQ(active_context.template get_instance<ScenarioController>(),
     this->controllers.at("b"));
 
   ASSERT_TRUE(this->root->switch_component("controllers", "b", "a", false).success);

@@ -18,8 +18,6 @@
 namespace rpp
 {
 
-template<typename T>
-class SubcomponentInstanceRange;
 class SubcomponentContextRange;
 
 /**
@@ -83,19 +81,6 @@ public:
 
   /// Share read-only access to the component clock.
   std::shared_ptr<const RppClock> get_clock() const;
-
-  /// Return a direct native C++ instance from a named or selected subcomponent.
-  /// Adapted subcomponents do not expose their remote implementation pointer.
-  /// List slots always require component_name, including when only one entry is loaded.
-  template<typename T>
-  std::shared_ptr<T> get_subcomponent_instance(
-    const std::string & slot_name, std::optional<std::string> component_name = std::nullopt) const;
-
-  /// Lazily enumerate direct native C++ instances in registration order.
-  /// Iteration throws when an entry is adapted, unloaded, or released.
-  template<typename T>
-  SubcomponentInstanceRange<T> enumerate_subcomponent_instances(
-    const std::string & slot_name) const;
 
   /// List subcomponent slot names in sorted order, including declared empty slots.
   std::vector<std::string> list_subcomponents() const;
@@ -166,20 +151,6 @@ class SubcomponentContext
   explicit SubcomponentContext(std::shared_ptr<const ComponentContext> context)
   : context_(std::move(context)) {}
 
-  template<typename T>
-  std::shared_ptr<T> get_native_instance() const
-  {
-    return context_->visit([](auto & component) {
-               if (!component.is_native_) {
-                 throw LifecycleError(
-          "An adapted subcomponent does not expose a native C++ instance");
-               }
-               auto instance = std::static_pointer_cast<T>(component.instance_);
-               if (!instance) {throw LifecycleError("Subcomponent instance is not loaded");}
-               return instance;
-    });
-  }
-
 public:
   /// Maximum wait for concurrent guarded calls; max() waits indefinitely.
   using Timeout = ComponentContext::Timeout;
@@ -223,51 +194,6 @@ public:
 
   /// Borrow the subcomponent instance UUID; copy it before retaining it beyond runtime release.
   const std::string & get_instance_id() const {return context_->get_instance_id();}
-};
-
-/// Owning range for lazily resolving native subcomponent instances.
-/// It snapshots views, not instances: an entry is checked when dereferenced.
-template<typename T>
-class SubcomponentInstanceRange
-{
-  using Contexts = std::vector<std::shared_ptr<const SubcomponentContext>>;
-  std::shared_ptr<const Contexts> contexts_;
-
-public:
-  class iterator
-  {
-    std::shared_ptr<const Contexts> contexts_;
-    size_t position_ = 0;
-
-public:
-    using value_type = std::shared_ptr<T>;
-    using difference_type = std::ptrdiff_t;
-    using iterator_category = std::input_iterator_tag;
-
-    iterator() = default;
-    iterator(std::shared_ptr<const Contexts> contexts, size_t position)
-    : contexts_(std::move(contexts)), position_(position) {}
-
-    value_type operator*() const
-    {
-      const auto & context = contexts_->at(position_);
-      if (!context->is_native()) {
-        throw LifecycleError("An adapted subcomponent does not expose a native C++ instance");
-      }
-      return context->template get_instance<T>();
-    }
-
-    iterator & operator++() {++position_; return *this;}
-    bool operator==(const iterator & other) const
-    {return contexts_ == other.contexts_ && position_ == other.position_;}
-    bool operator!=(const iterator & other) const {return !(*this == other);}
-  };
-
-  explicit SubcomponentInstanceRange(Contexts contexts)
-  : contexts_(std::make_shared<const Contexts>(std::move(contexts))) {}
-
-  iterator begin() const {return {contexts_, 0};}
-  iterator end() const {return {contexts_, contexts_->size()};}
 };
 
 /// Owning range for lazily enumerating subcomponent views.
@@ -314,26 +240,6 @@ T ComponentContext::get_parameter(const std::string & name) const
                throw std::runtime_error("Parameter '" + name + "' not found.");
              }
              return parameters.template get<T>(name);
-  });
-}
-
-template<typename T>
-std::shared_ptr<T> ComponentContext::get_subcomponent_instance(
-  const std::string & slot_name, std::optional<std::string> component_name) const
-{
-  return visit([&](auto & component) {
-             return component.subcomponent_slot(slot_name).subcomponent_context(component_name)->
-                    template get_native_instance<T>();
-  });
-}
-
-template<typename T>
-SubcomponentInstanceRange<T> ComponentContext::enumerate_subcomponent_instances(
-  const std::string & slot_name) const
-{
-  return visit([&](auto & component) {
-             return SubcomponentInstanceRange<T>(
-      component.subcomponent_slot(slot_name).subcomponent_contexts());
   });
 }
 

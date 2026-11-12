@@ -173,8 +173,10 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
   for (const auto & entry : initial) {
     EXPECT_EQ(entry.state, rpp::LifecycleState::UNCONFIGURED);
                                                                                                 }
-  auto primary = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller", "primary");
-  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller", "backup");
+  const auto & primary_context = context.get_subcomponent_context("controller", "primary");
+  const auto & backup_context = context.get_subcomponent_context("controller", "backup");
+  auto primary = primary_context.get_instance<ScriptBuilderPlugin>();
+  auto backup = backup_context.get_instance<ScriptBuilderPlugin>();
   EXPECT_EQ(primary->configure_calls, 0);
   EXPECT_EQ(backup->configure_calls, 0);
   EXPECT_EQ(primary->activate_calls, 0);
@@ -194,7 +196,8 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
   ASSERT_TRUE(runtime.switch_component("controller", "primary", "backup").success);
   EXPECT_EQ(primary->deactivate_calls, 1);
   EXPECT_EQ(backup->activate_calls, 1);
-  EXPECT_EQ(context.get_subcomponent_instance<ScriptBuilderPlugin>("controller"), backup);
+  const auto & selected_context = context.get_subcomponent_context("controller");
+  EXPECT_EQ(selected_context.get_instance<ScriptBuilderPlugin>(), backup);
   auto views = context.enumerate_subcomponent_contexts("controller");
   std::shared_ptr<const rpp::SubcomponentContext> backup_view;
   for (const auto & view : views) {
@@ -228,7 +231,8 @@ TYPED_TEST(ScriptRuntimeBuilderTest, DescriptionPathUsesExplicitConfigurationAnd
   ASSERT_EQ(entries.size(), 1u);
   EXPECT_EQ(entries.front().name, "backup");
   const rpp::ComponentContext & context = runtime.get_context();
-  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller");
+  const auto & backup_context = context.get_subcomponent_context("controller");
+  auto backup = backup_context.get_instance<ScriptBuilderPlugin>();
   ASSERT_TRUE(runtime.configure().success);
   EXPECT_EQ(backup->value, 42);
   ASSERT_TRUE(context.activate_subcomponents().success);
@@ -250,7 +254,8 @@ TYPED_TEST(ScriptRuntimeBuilderTest, LibraryLookupFindsScriptAndHonorsConfigurat
   ASSERT_EQ(entries.size(), 1u);
   EXPECT_EQ(entries.front().name, "backup");
   const rpp::ComponentContext & context = runtime.get_context();
-  auto backup = context.get_subcomponent_instance<ScriptBuilderPlugin>("controller");
+  const auto & backup_context = context.get_subcomponent_context("controller");
+  auto backup = backup_context.get_instance<ScriptBuilderPlugin>();
   ASSERT_TRUE(runtime.configure().success);
   EXPECT_EQ(backup->value, 20);
   ASSERT_TRUE(context.activate_subcomponents().success);

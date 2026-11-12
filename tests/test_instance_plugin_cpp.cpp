@@ -842,7 +842,8 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
     ASSERT_EQ(subcomponent_list.size(), 1);
     ASSERT_EQ(subcomponent_list[0], "ctl1");
 
-    auto subcomponent = context.get_context().get_subcomponent_instance<rpp_testing::MotionController2D>("ctl1");
+    const auto & controller_context = context.get_context().get_subcomponent_context("ctl1");
+    auto subcomponent = controller_context.get_instance<rpp_testing::MotionController2D>();
 
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();
     odom_msg.pose().position().x() = 1.0;
@@ -917,9 +918,6 @@ TEST_F(PythonAdapterTest, TestComponentCppWithPythonSubc) {
     EXPECT_TRUE(subcomponent_runtimes.front()->get_context().list_subcomponents().empty());
     EXPECT_FALSE(context.get_context().is_native_subcomponent("ctl_1"));
 
-    EXPECT_THROW(
-      context.get_context().get_subcomponent_instance<rpp_testing::MotionController2D>("ctl_1"),
-      rpp::LifecycleError);
     const auto & python_context = context.get_context().get_subcomponent_context("ctl_1");
     auto python_subcomponent = python_context.get_instance<rpp_testing::MotionController2D>();
     auto odom_msg = rpp_testing::MotionController2D::Odometry2D();

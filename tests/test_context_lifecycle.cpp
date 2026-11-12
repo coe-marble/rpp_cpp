@@ -393,7 +393,8 @@ TEST(ContextSlots, StaticOptionAllowsLifecycleButRejectsDynamicSelectionAndMembe
   EXPECT_FALSE(context.allows_dynamic_components());
   ASSERT_TRUE(context.configure().success);
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
-  const auto first = context.get_context().get_subcomponent_instance<AxisController>("controllers");
+  const auto & controller_context = context.get_context().get_subcomponent_context("controllers");
+  const auto first = controller_context.get_instance<AxisController>();
   EXPECT_FALSE(context.activate_component("controllers", "second").success);
   EXPECT_FALSE(context.switch_component("controllers", "first", "second").success);
   EXPECT_FALSE(context.load_component("controllers", "third", "/third").success);
@@ -401,7 +402,7 @@ TEST(ContextSlots, StaticOptionAllowsLifecycleButRejectsDynamicSelectionAndMembe
   EXPECT_FALSE(context.reload_component("controllers", "first").success);
   EXPECT_FALSE(rpp::ComponentRuntimeAccess::registered_component(context, "controllers",
     "second").activate().success);
-  EXPECT_EQ(context.get_context().get_subcomponent_instance<AxisController>("controllers"), first);
+  EXPECT_EQ(controller_context.get_instance<AxisController>(), first);
   ASSERT_TRUE(context.get_context().deactivate_subcomponents().success);
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
   EXPECT_TRUE(context.close().success);
@@ -514,8 +515,8 @@ TEST(ContextSlots, SingleAndOptionUseTheSameExclusivePolicy)
     ASSERT_EQ(info.size(), 2u);
     EXPECT_EQ(info[0].state, rpp::LifecycleState::INACTIVE);
     EXPECT_EQ(info[1].state, rpp::LifecycleState::ACTIVE);
-    EXPECT_EQ(
-      context.get_context().get_subcomponent_instance<AxisController>("controllers"),
+    const auto & controller_context = context.get_context().get_subcomponent_context("controllers");
+    EXPECT_EQ(controller_context.get_instance<AxisController>(),
       rpp::ComponentRuntimeAccess::registered_component(context, "controllers",
       "second").get_instance<AxisController>());
     ASSERT_TRUE(context.unload_component("controllers", "first").success);
@@ -536,9 +537,10 @@ TEST(ContextSlots, ListActivatesMultipleComponentsAndReturnsRetainableHandles)
   const auto children = rpp::ComponentRuntimeAccess::registered_components(context, "controllers");
   ASSERT_EQ(children.size(), 2u);
   size_t enumerated = 0;
-  for (const auto & controller :
-    context.get_context().enumerate_subcomponent_instances<AxisController>("controllers"))
+  for (const auto & controller_context :
+    context.get_context().enumerate_subcomponent_contexts("controllers"))
   {
+    const auto controller = controller_context->get_instance<AxisController>();
     ASSERT_TRUE(controller);
     ++enumerated;
   }

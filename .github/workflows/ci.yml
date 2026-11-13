@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, develop, lyrical]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, lyrical]
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
@@ -42,7 +42,7 @@ jobs:
           repository: coe-marble/rpp_dev
           # rpp_cpp's ROS Lyrical branch is integrated against rpp_dev/main;
           # the integration repository does not have a matching lyrical ref.
-          ref: ${{ github.event.pull_request.base.ref || (github.ref_name == 'lyrical' && 'main') || github.ref_name }}
+          ref: ${{ (github.base_ref || github.ref_name) == 'lyrical' && 'main' || github.base_ref || github.ref_name }}
           path: rpp_dev
           submodules: recursive
           token: ${{ secrets.RPP_CI_TOKEN || github.token }}

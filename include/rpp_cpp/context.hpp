@@ -121,6 +121,17 @@ public:
   /// Concurrent mode drains their guarded calls; timeout bounds only that wait.
   CallbackResult deactivate_subcomponents(Timeout timeout = Timeout::max()) const;
 
+  /// Acquire a move-only guard for an active child component.
+  ///
+  /// Omitting component_name selects the current entry of an exclusive slot.
+  /// List slots require component_name. An inactive or unavailable component
+  /// returns an empty handle; type mismatches and unknown slots throw.
+  template<typename T>
+  [[nodiscard]] ActiveComponent<T> get_active_component(
+    const std::string & slot_name,
+    std::optional<std::string> component_name = {},
+    std::optional<std::string_view> expected_instance_id = {}) const;
+
   /// Execute callback(T&) through a named active subcomponent's slot guard.
   /// Callback return values must be owned values or void; exceptions propagate.
   /// An expected UUID rejects replacement under the same registration name.
@@ -251,6 +262,17 @@ auto ComponentContext::with_active_component(
   return visit([&](auto & component) -> std::invoke_result_t<Callback, T &> {
              return component.subcomponent_slot(slot_name).template with_active<T>(
       name, std::forward<Callback>(callback), expected_instance_id);
+  });
+}
+
+template<typename T>
+ActiveComponent<T> ComponentContext::get_active_component(
+  const std::string & slot_name, std::optional<std::string> component_name,
+  std::optional<std::string_view> expected_instance_id) const
+{
+  return visit([&](auto & component) {
+             return component.subcomponent_slot(slot_name).template get_active<T>(
+      std::move(component_name), expected_instance_id);
   });
 }
 

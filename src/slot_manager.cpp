@@ -878,13 +878,28 @@ typename BasicSlotManager<Threading>::ActiveCall BasicSlotManager<Threading>::bo
   const std::string & name,
   std::optional<std::string_view> expected_instance_id)
 {
+  auto call = try_borrow(std::optional<std::string>{name}, expected_instance_id);
+  if (!call) {throw LifecycleError("Component is not available for active calls");}
+  return std::move(*call);
+}
+
+template<class Threading>
+std::optional<typename BasicSlotManager<Threading>::ActiveCall>
+BasicSlotManager<Threading>::try_borrow(
+  const std::optional<std::string> & component_name,
+  std::optional<std::string_view> expected_instance_id)
+{
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
-  auto item = entry_unlocked(name);
+  if (!component_name && activation_policy_ == ActivationPolicy::MULTIPLE) {
+    throw LifecycleError("A list slot requires a component name");
+  }
+  auto item = component_name ? entry_unlocked(*component_name) : selected_entry_unlocked();
+  if (!item) {return std::nullopt;}
   if (expected_instance_id && *expected_instance_id != std::string_view(item->info.instance_id)) {
     throw LifecycleError("Component instance_id does not match the loaded instance");
   }
   if (shutdown_requested_ || !item->info.callable || item->info.state != LifecycleState::ACTIVE) {
-    throw LifecycleError("Component is not available for active calls");
+    return std::nullopt;
   }
   auto instance = item->component->instance_;
   guarded_call_nesting_.enter();

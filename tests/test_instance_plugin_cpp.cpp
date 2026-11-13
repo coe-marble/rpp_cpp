@@ -121,6 +121,37 @@ TEST(ComponentCallExecutorTest, RunsCallsAndPropagatesErrors)
     EXPECT_THROW(executor.call([](kj::AsyncIoContext &) {}), std::runtime_error);
 }
 
+TEST(ComponentCallExecutorTest, RetainedResponseLivesUntilReleasedByCaller)
+{
+  struct Response
+  {
+    std::atomic<int> * destructions;
+
+    explicit Response(std::atomic<int> & value) : destructions(&value) {}
+    Response(const Response &) = delete;
+    Response & operator=(const Response &) = delete;
+    Response(Response && other) noexcept : destructions(std::exchange(other.destructions, nullptr)) {}
+    ~Response()
+    {
+      if (destructions) {++*destructions;}
+    }
+  };
+
+  std::atomic<int> destructions{0};
+  rpp::ComponentCallExecutor executor;
+  executor.start();
+  auto response = executor.call([&](kj::AsyncIoContext &) {
+      return executor.retain(Response(destructions));
+  });
+  EXPECT_EQ(destructions.load(), 0);
+
+  response.reset();
+  // Destruction from this test thread is queued back to the RPC worker.
+  executor.call([](kj::AsyncIoContext &) {});
+  EXPECT_EQ(destructions.load(), 1);
+  executor.stop();
+}
+
 
 class NativePluginTest : public ::testing::Test {
 
@@ -272,6 +303,36 @@ void check_all_interface_types_plugin_call(
   ASSERT_DOUBLE_EQ(list_struct_val[1].x(), 7.0);
   ASSERT_DOUBLE_EQ(list_struct_val[1].y(), 8.0);
 
+}
+
+void check_remote_result_lifetimes(rpp_testing::TestInterfaceAll * plugin_client)
+{
+  rpp_schema::rpp_testing::TestStruct1::List input;
+  input.resize(2);
+  input[0].x() = 1.0;
+  input[0].y() = 2.0;
+  input[1].x() = 3.0;
+  input[1].y() = 4.0;
+
+  // The returned struct and its shallow copy must retain the RPC response after
+  // the containing list and the generated call result have gone out of scope.
+  auto retained = [&] {
+      auto response = plugin_client->funcWithListOfStructParam(input);
+      EXPECT_EQ(response.size(), 2U);
+      return response[0];
+    }();
+  const auto retained_copy = retained.shallow_copy();
+  EXPECT_DOUBLE_EQ(retained.linear(), 3.0);
+  EXPECT_DOUBLE_EQ(retained_copy.angular(), 0.0);
+
+  // A nested struct must receive the same retained response owner when it
+  // escapes its parent result as well.
+  auto nested = [&] {
+      auto response = plugin_client->funcWithListOfStructParam(input);
+      return response[1].struct1();
+    }();
+  EXPECT_DOUBLE_EQ(nested.x(), 3.0);
+  EXPECT_DOUBLE_EQ(nested.y(), 4.0);
 }
 
 TEST_F(NativePluginTest, TestDataInterface) {
@@ -548,6 +609,7 @@ TEST_F(NativePluginTest, TestPluginAdapterLocalWithAllInterfaceTypes)
     }));
 
     check_all_interface_types_plugin_call(plugin_client.get());
+    check_remote_result_lifetimes(plugin_client.get());
 
     client_executor.call([&](kj::AsyncIoContext &) {
       plugin_client.reset();

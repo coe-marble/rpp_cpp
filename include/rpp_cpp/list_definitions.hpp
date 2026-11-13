@@ -58,7 +58,7 @@ public:
   auto operator[](size_t index) const
   {
     if constexpr (is_rpp_struct<T>::value) {
-      return typename T::Const(list_reader_[index]);
+      return typename T::Const(list_reader_[index], message_lifetime_);
     } else {
       return list_reader_[index];
     }

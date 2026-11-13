@@ -70,6 +70,28 @@ public:
     return future.get();
   }
 
+  /// Retain a response on its RPC worker without copying its message. All
+  /// returned views must be released before stopping/destroying this executor.
+  template<typename Response>
+  std::shared_ptr<std::decay_t<Response>> retain(Response && response)
+  {
+    using Owned = std::decay_t<Response>;
+    const auto worker = std::this_thread::get_id();
+    if (worker != thread_.get_id()) {
+      throw std::runtime_error("RPC responses must be retained on the executor thread.");
+    }
+    return std::shared_ptr<Owned>(new Owned(std::forward<Response>(response)),
+      [this, worker](Owned * value) {
+        if (std::this_thread::get_id() == worker) {
+          delete value;
+        } else {
+          // The existing queue is drained by stop(). Release all views before
+          // shutdown so this cleanup is queued before the RPC context closes.
+          enqueue([value](kj::AsyncIoContext &) {delete value;});
+        }
+      });
+  }
+
   void stop()
   {
     {

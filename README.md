@@ -2,6 +2,24 @@
 
 `rpp_cpp` provides the C++ plugin runtime and the C++ component server.
 
+Generated C++ RPC results retain their original response through shared
+ownership. Struct, list, and data views share that owner, including nested
+views and `Const::shallow_copy()`. Retaining a response moves its handle and
+does not clone its payload. Scalar return values remain ordinary values.
+
+Release every returned RPC view before closing its runtime, client context,
+or executor. Executor-managed views may be released by the application thread:
+their final release queues response destruction on the
+existing RPC executor. The executor and its shutdown behavior are otherwise
+unchanged. Direct clients without an executor must release their views on the
+same RPC thread, before closing that thread's client context/event loop.
+Converting a view to a raw Cap'n Proto reader does not transfer its owner;
+keep the RPP view alive while using that raw reader.
+
+Regenerate affected schema wrappers and adapters, including dependent libraries,
+and rebuild downstream C++ code after this change. Existing generated headers
+and compiled adapters retain their previous ownership behavior.
+
 See [C++ context construction and lifecycle](docs/context-flow.md) for the
 class responsibilities, call flow, ownership, and runtime operations.
 

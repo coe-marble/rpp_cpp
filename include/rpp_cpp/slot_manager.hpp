@@ -22,6 +22,41 @@
 
 namespace rpp
 {
+
+/// A temporary, lifecycle-guarded handle to an active component.
+///
+/// The handle is move-only and keeps the slot call guard for its lifetime.
+/// Do not retain references or pointers obtained through it beyond the handle.
+template<typename T>
+class ActiveComponent
+{
+  template<class>
+  friend class BasicSlotManager;
+
+  // Member order is deliberate: destroy the instance reference before releasing
+  // the slot call guard.
+  std::shared_ptr<void> guard_;
+  std::shared_ptr<T> instance_;
+
+  ActiveComponent(std::shared_ptr<void> guard, std::shared_ptr<T> instance)
+  : guard_(std::move(guard)), instance_(std::move(instance)) {}
+
+public:
+  ActiveComponent() = default;
+  ActiveComponent(const ActiveComponent &) = delete;
+  ActiveComponent & operator=(const ActiveComponent &) = delete;
+  ActiveComponent(ActiveComponent &&) noexcept = default;
+  ActiveComponent & operator=(ActiveComponent &&) noexcept = default;
+
+  [[nodiscard]] explicit operator bool() const noexcept
+  {
+    return static_cast<bool>(instance_);
+  }
+
+  T & operator*() const {return *instance_;}
+  T * operator->() const {return instance_.get();}
+};
+
 /**
  * Owns the component entries in one single, option or list slot.
  * Enforces registration, exclusive/multiple activation, lifecycle state,
@@ -164,6 +199,9 @@ private:
     }
   };
   ActiveCall borrow(const std::string &, std::optional<std::string_view> expected_instance_id);
+  std::optional<ActiveCall> try_borrow(
+    const std::optional<std::string> & component_name,
+    std::optional<std::string_view> expected_instance_id);
 
 public:
   /// Create an empty slot with its factory, activation policy, dynamic permission and validators.
@@ -288,6 +326,21 @@ public:
 
   /// Snapshot metadata for all registrations in order, including unloaded and error entries.
   std::vector<ComponentStatus> list() const;
+
+  /// Acquire a move-only guard for a named list entry or the selected exclusive entry.
+  /// An inactive or unavailable entry returns an empty handle. Type mismatches throw.
+  template<typename T>
+  [[nodiscard]] ActiveComponent<T> get_active(
+    std::optional<std::string> component_name = {},
+    std::optional<std::string_view> expected_instance_id = {})
+  {
+    auto call = try_borrow(component_name, expected_instance_id);
+    if (!call) {return {};}
+    auto instance = std::dynamic_pointer_cast<T>(call->instance);
+    if (!instance) {throw LifecycleError("Managed plugin type mismatch");}
+    auto guard = std::make_shared<ActiveCall>(std::move(*call));
+    return ActiveComponent<T>(std::move(guard), std::move(instance));
+  }
 
   /**
    * Guard only the duration of callback(T&) against deactivation/unloading of this entry.

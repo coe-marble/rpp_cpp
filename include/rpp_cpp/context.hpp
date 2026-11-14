@@ -126,6 +126,9 @@ public:
   /// Omitting component_name selects the current entry of an exclusive slot.
   /// List slots require component_name. An inactive or unavailable component
   /// returns an empty handle; type mismatches and unknown slots throw.
+  /// Destroy the returned handle before deactivating, switching, unloading, or
+  /// cleaning up its slot; those lifecycle operations cannot proceed while it
+  /// is in use.
   template<typename T>
   [[nodiscard]] ActiveComponent<T> get_active_component(
     const std::string & slot_name,

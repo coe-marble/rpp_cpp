@@ -27,6 +27,8 @@ namespace rpp
 ///
 /// The handle is move-only and keeps the slot call guard for its lifetime.
 /// Do not retain references or pointers obtained through it beyond the handle.
+/// Destroy the handle before deactivating, switching, unloading, or cleaning up
+/// its slot; those lifecycle operations cannot proceed while it is in use.
 template<typename T>
 class ActiveComponent
 {
@@ -329,6 +331,7 @@ public:
 
   /// Acquire a move-only guard for a named list entry or the selected exclusive entry.
   /// An inactive or unavailable entry returns an empty handle. Type mismatches throw.
+  /// Destroy the returned handle before lifecycle operations affecting its slot.
   template<typename T>
   [[nodiscard]] ActiveComponent<T> get_active(
     std::optional<std::string> component_name = {},

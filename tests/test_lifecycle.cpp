@@ -37,8 +37,8 @@ public:
     return {};
   }
 
-  rpp::DeactivationResult<MoveOnlyEstimate> on_deactivate() override
-  {return {{}, std::move(estimate)};}
+  rpp::CallbackResult on_deactivate() override
+  {return {};}
 
   int received = 0;
 };
@@ -50,9 +50,8 @@ TEST(PluginLifecycle, SnapshotSurvivesSourceAndInputMutation)
   {
     Localizer source;
     source.estimate.position = {1.0, 2.0};
-    auto result = source.deactivate_state();
-    ASSERT_TRUE(result.result.success);
-    snapshot = std::move(*result.state);
+    snapshot = Estimate{source.estimate};
+    ASSERT_TRUE(source.deactivate_state().success);
     source.estimate.position.push_back(99.0);
   }
   rpp::testing::AlternativeLocalizer target;
@@ -64,10 +63,9 @@ TEST(PluginLifecycle, TransfersMoveOnlyStateWithoutCopying)
 {
   MoveOnlyLocalizer source(17);
   auto stopped = source.deactivate_state();
-  ASSERT_TRUE(stopped.result.success);
-  ASSERT_TRUE(stopped.state.has_value());
+  ASSERT_TRUE(stopped.success);
   MoveOnlyLocalizer target(0);
-  ASSERT_TRUE(target.activate_state(std::move(*stopped.state)).success);
+  ASSERT_TRUE(target.activate_state(std::move(source.estimate)).success);
   EXPECT_EQ(target.received, 17);
 }
 
@@ -88,12 +86,11 @@ TEST(PluginLifecycle, RejectsWrongStateType)
   EXPECT_FALSE(plugin.called);
 }
 
-TEST(PluginLifecycle, FailedDeactivationDoesNotExportSnapshot)
+TEST(PluginLifecycle, FailedDeactivationReportsFailure)
 {
   rpp::testing::FailedDeactivationLocalizer plugin;
   auto result = plugin.deactivate_state();
-  EXPECT_FALSE(result.result.success);
-  EXPECT_FALSE(result.state.has_value());
+  EXPECT_FALSE(result.success);
 }
 
 TEST(PluginLifecycle, StatelessCallbacksAndPayloadRejection)
@@ -104,8 +101,7 @@ TEST(PluginLifecycle, StatelessCallbacksAndPayloadRejection)
   EXPECT_EQ(plugin.activated, 0);
   EXPECT_TRUE(base.activate_state().success);
   auto result = base.deactivate_state();
-  EXPECT_TRUE(result.result.success);
-  EXPECT_FALSE(result.state.has_value());
+  EXPECT_TRUE(result.success);
   EXPECT_EQ(plugin.activated, 1);
   EXPECT_EQ(plugin.deactivated, 1);
 }
@@ -117,8 +113,7 @@ TEST(PluginLifecycle, CallbackFailuresAndExceptionsAreReported)
   EXPECT_FALSE(activation.success);
   EXPECT_NE(activation.message.find("state rejected"), std::string::npos);
   auto deactivation = plugin.deactivate_state();
-  EXPECT_FALSE(deactivation.result.success);
-  EXPECT_NE(deactivation.result.message.find("on_deactivate"), std::string::npos);
-  EXPECT_NE(deactivation.result.message.find("still updating"), std::string::npos);
-  EXPECT_FALSE(deactivation.state.has_value());
+  EXPECT_FALSE(deactivation.success);
+  EXPECT_NE(deactivation.message.find("on_deactivate"), std::string::npos);
+  EXPECT_NE(deactivation.message.find("still updating"), std::string::npos);
 }

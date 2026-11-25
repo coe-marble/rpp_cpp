@@ -60,40 +60,7 @@ private:
   };
 };
 
-class RemoteStateCodec
-{
-protected:
-  static CallbackResult decode(
-    uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state)
-  {
-    if (schema_id == 0 && payload.isNull()) {
-      state = HandoverState{};
-      return {};
-    }
-    if (schema_id != kRemoteStateSchemaId) {
-      return CallbackResult::failure("Unexpected lifecycle state schema ID");
-    }
-    state = HandoverState(RemoteState::Const::from_wire(payload.getAs<runtime::AdapterInfo>()));
-    return {};
-  }
-
-  static CallbackResult encode(
-    const HandoverState & state, uint64_t & schema_id, capnp::AnyPointer::Builder payload)
-  {
-    if (!state.has_value()) {
-      schema_id = 0;
-      return {};
-    }
-    if (!state.holds<RemoteState::Const>()) {
-      return CallbackResult::failure("Unexpected lifecycle state type");
-    }
-    schema_id = kRemoteStateSchemaId;
-    payload.setAs<runtime::AdapterInfo>(state.get<RemoteState::Const>());
-    return {};
-  }
-};
-
-class RemoteServerAdapter final : public ServerAdapter, private RemoteStateCodec
+class RemoteServerAdapter final : public ServerAdapter
 {
 public:
   RemoteServerAdapter()
@@ -110,17 +77,23 @@ public:
   const ServerAdapterInfo & get_info_adapter_server__() const override {return info_;}
   CallbackResult decode_lifecycle_state__(
     uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const override
-  {return decode(schema_id, payload, state);}
-  CallbackResult encode_lifecycle_state__(
-    const HandoverState & state, uint64_t & schema_id,
-    capnp::AnyPointer::Builder payload) const override
-  {return encode(state, schema_id, payload);}
+  {
+    if (schema_id == 0 && payload.isNull()) {
+      state = HandoverState{};
+      return {};
+    }
+    if (schema_id != kRemoteStateSchemaId || payload.isNull()) {
+      return CallbackResult::failure("Unexpected lifecycle state schema ID or payload");
+    }
+    state = HandoverState(RemoteState::Const::from_wire(payload.getAs<runtime::AdapterInfo>()));
+    return {};
+  }
 
 private:
   ServerAdapterInfo info_;
 };
 
-class RemoteClientAdapter final : public ClientAdapter, private RemoteStateCodec
+class RemoteClientAdapter final : public ClientAdapter
 {
 public:
   bool configure_adapter_client__(std::shared_ptr<ClientAdapterParams>) override {return true;}
@@ -128,13 +101,21 @@ public:
     const RppRuntimeClientContext &,
     std::optional<std::reference_wrapper<ComponentCallExecutor>>) override {return true;}
   const ClientAdapterInfo & get_info_adapter_client__() const override {return info_;}
-  CallbackResult decode_lifecycle_state__(
-    uint64_t schema_id, capnp::AnyPointer::Reader payload, HandoverState & state) const override
-  {return decode(schema_id, payload, state);}
   CallbackResult encode_lifecycle_state__(
     const HandoverState & state, uint64_t & schema_id,
     capnp::AnyPointer::Builder payload) const override
-  {return encode(state, schema_id, payload);}
+  {
+    if (!state.has_value()) {
+      schema_id = 0;
+      return {};
+    }
+    if (!state.holds<RemoteState::Const>()) {
+      return CallbackResult::failure("Unexpected lifecycle state type");
+    }
+    schema_id = kRemoteStateSchemaId;
+    payload.setAs<runtime::AdapterInfo>(state.get<RemoteState::Const>());
+    return {};
+  }
 
 private:
   ClientAdapterInfo info_;
@@ -159,10 +140,10 @@ public:
     return {};
   }
 
-  DeactivationResult<RemoteState::Const> on_deactivate() override
+  CallbackResult on_deactivate() override
   {
     events.push_back("deactivate");
-    return {{}, RemoteState::Const::named("returned-state")};
+    return {};
   }
 
   CallbackResult on_cleanup() override

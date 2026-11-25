@@ -36,13 +36,6 @@ struct CallbackResult
   }
 };
 
-template<typename State>
-struct DeactivationResult
-{
-  CallbackResult result;
-  std::optional<State> state;
-};
-
 /// Snapshot of one registered component's lifecycle and guarded-call status.
 struct ComponentStatus
 {

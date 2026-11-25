@@ -111,6 +111,12 @@ private:
 public:
     ElementRef(typename capnp::List<El_T<T>>::Builder & b, size_t i)
     : builder_(b), index_(i) {}
+    ElementRef(const ElementRef &) = default;
+    // Assign the element's value, keeping this proxy bound to its original index.
+    ElementRef & operator=(const ElementRef & other)
+    {
+      return *this = static_cast<T>(other);
+    }
     ElementRef & operator=(const T & value)
     {
       if constexpr (is_rpp_struct<T>::value) {
@@ -144,7 +150,7 @@ public:
   List(const List & other) = delete;
 
         // Core API methods
-  size_t size() const {return list_builder_ ? list_builder_.size() : 0;}
+  size_t size() const {return list_builder_.size();}
   bool empty() const {return size() == 0;}
 
   void resize(size_t new_size) {init(new_size);}
@@ -218,6 +224,11 @@ private:
 public:
     ElementRef(capnp::List<capnp::Text>::Builder & b, size_t i)
     : builder_(b), index_(i) {}
+    ElementRef(const ElementRef &) = default;
+    ElementRef & operator=(const ElementRef & other)
+    {
+      return *this = static_cast<std::string>(other);
+    }
     ElementRef & operator=(const std::string & value) {builder_.set(index_, value); return *this;}
     operator std::string() const {return std::string(builder_[index_].asReader().cStr());}
   };

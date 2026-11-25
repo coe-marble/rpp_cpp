@@ -111,7 +111,7 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::activate_component(
 {return slot(slot_name).activate(name, std::move(state));}
 
 template<bool Concurrent, bool IsScript>
-DeactivationResult<HandoverState> BasicRuntime<Concurrent, IsScript>::deactivate_component(
+CallbackResult BasicRuntime<Concurrent, IsScript>::deactivate_component(
   const std::string & slot_name,
   const std::string & name, Timeout timeout) const
 {return slot(slot_name).deactivate(name, timeout);}
@@ -129,17 +129,11 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::unload_component(
 {return slot(slot_name).unload(name, timeout);}
 
 template<bool Concurrent, bool IsScript>
-CallbackResult BasicRuntime<Concurrent, IsScript>::switch_component(
-  const std::string & slot_name, const std::string & source,
-  const std::string & target, bool transfer_state, Timeout timeout) const
-{return slot(slot_name).switch_components(source, target, transfer_state, timeout);}
-
-template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::reload_component(
   const std::string & slot_name, const std::string & name,
-  bool transfer_state, Timeout timeout,
+  HandoverState state, Timeout timeout,
   std::function<void(const std::string &)> refresh) const
-{return slot(slot_name).reload(name, transfer_state, timeout, std::move(refresh));}
+{return slot(slot_name).reload(name, std::move(state), timeout, std::move(refresh));}
 
 template<bool Concurrent, bool IsScript>
 CallbackResult BasicRuntime<Concurrent, IsScript>::set_registration_validator(
@@ -173,7 +167,7 @@ CallbackResult BasicRuntime<Concurrent, IsScript>::activate(HandoverState state)
 }
 
 template<bool Concurrent, bool IsScript>
-DeactivationResult<HandoverState> BasicRuntime<Concurrent,
+CallbackResult BasicRuntime<Concurrent,
   IsScript>::deactivate(Timeout timeout) const
 {
   if constexpr (IsScript) {(void)component_data(); return {};} else {

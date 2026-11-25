@@ -6,10 +6,30 @@
 #include "rpp_cpp/runtime.hpp"
 #include "rpp_cpp/context.hpp"
 #include "rpp_cpp/external_component_process.hpp"
+#include "rpp_cpp/logger.hpp"
 
 namespace rpp
 {
 using detail::ComponentBuildRequest;
+
+namespace
+{
+void log_lifecycle_result(
+  const std::string & operation, const std::string & name, const CallbackResult & result) noexcept
+{
+  try {
+    static const RppLogger logger("rpp_slot_manager");
+    if (result.success) {
+      RPP_LOG_INFO(logger, "%s succeeded for '%s'", operation.c_str(), name.c_str());
+    } else {
+      RPP_LOG_WARN(logger, "%s failed for '%s': %s",
+        operation.c_str(), name.c_str(), result.message.c_str());
+    }
+  } catch (...) {
+    // A logging failure must leave the lifecycle result intact.
+  }
+}
+}  // namespace
 
 template<class Threading>
 struct BasicSlotManager<Threading>::Entry
@@ -284,11 +304,16 @@ CallbackResult BasicSlotManager<Threading>::finish(
   Entry & item, LifecycleState state,
   CallbackResult result)
 {
-  std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
-  item.info.state = state;
-  item.info.last_result = result;
-  item.info.transition.reset();
-  item.info.callable = state == LifecycleState::ACTIVE && result.success;
+  std::optional<std::string> operation;
+  {
+    std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
+    item.info.state = state;
+    item.info.last_result = result;
+    operation = std::move(item.info.transition);
+    item.info.transition.reset();
+    item.info.callable = state == LifecycleState::ACTIVE && result.success;
+  }
+  if (operation) {log_lifecycle_result(*operation, item.info.name, result);}
   return result;
 }
 
@@ -609,52 +634,47 @@ CallbackResult BasicSlotManager<Threading>::activate(
 }
 
 template<class Threading>
-DeactivationResult<HandoverState> BasicSlotManager<Threading>::stop(Entry & item)
+CallbackResult BasicSlotManager<Threading>::stop(Entry & item)
 {
   try {
     auto result = deactivate_component(*item.component);
-    if (result.result.success) {
+    if (result.success) {
       std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
       item.may_be_active = false;
-    } else {
-      result.state.reset();
     }
     return result;
   } catch (const std::exception & error) {
-    return {CallbackResult::failure(std::string("deactivate failed: ") + error.what()), {}};
+    return CallbackResult::failure(std::string("deactivate failed: ") + error.what());
   } catch (...) {
-    return {CallbackResult::failure("deactivate failed: unknown exception"), {}};
+    return CallbackResult::failure("deactivate failed: unknown exception");
   }
 }
 
 template<class Threading>
-DeactivationResult<HandoverState> BasicSlotManager<Threading>::deactivate(
+CallbackResult BasicSlotManager<Threading>::deactivate(
   const std::string & name, Timeout timeout,
   std::optional<std::string_view> expected_instance_id)
 {
   if (has_local_call()) {
-    return {CallbackResult::failure("Cannot manage a slot from inside its guarded call"), {}};
+    return CallbackResult::failure("Cannot manage a slot from inside its guarded call");
   }
   if (registration_validation_in_progress_) {
-    return {CallbackResult::failure("Cannot mutate a slot from its registration validator"), {}};
+    return CallbackResult::failure("Cannot mutate a slot from its registration validator");
   }
   auto item = entry(name);
   if (expected_instance_id && item->info.instance_id != *expected_instance_id) {
-    return {CallbackResult::failure("Stale component runtime instance"), {}};
+    return CallbackResult::failure("Stale component runtime instance");
   }
   if (item->info.state == LifecycleState::INACTIVE && !item->info.transition) {return {};}
   if (item->info.state == LifecycleState::ERROR && !item->may_be_active) {
-    return {CallbackResult::failure("Failed configuration requires cleanup before reconfiguration"),
-      {}};
+    return CallbackResult::failure("Failed configuration requires cleanup before reconfiguration");
   }
   auto rejected = begin(*item, "deactivate", {LifecycleState::ACTIVE, LifecycleState::ERROR});
-  if (rejected) {return {*rejected, {}};}
+  if (rejected) {return *rejected;}
   auto drained = drain(*item, timeout);
-  auto result = drained.success ? stop(*item) : DeactivationResult<HandoverState>{drained, {}};
-  finish(
-    *item, result.result.success ? LifecycleState::INACTIVE : LifecycleState::ERROR,
-    result.result);
-  return result;
+  auto result = drained.success ? stop(*item) : drained;
+  return finish(*item, result.success ? LifecycleState::INACTIVE : LifecycleState::ERROR,
+    std::move(result));
 }
 
 template<class Threading>
@@ -718,7 +738,7 @@ CallbackResult BasicSlotManager<Threading>::unload(
   if (rejected) {return *rejected;}
   auto result = drain(*item, timeout);
   if (result.success && item->component && !item->component->resources_released_) {
-    if (item->may_be_active) {result = stop(*item).result;}
+    if (item->may_be_active) {result = stop(*item);}
     if (result.success) {
       result = capture(
         "deactivate descendants", [&] {
@@ -742,51 +762,8 @@ CallbackResult BasicSlotManager<Threading>::unload(
 }
 
 template<class Threading>
-CallbackResult BasicSlotManager<Threading>::switch_components(
-  const std::string & source, const std::string & target,
-  bool transfer_state, Timeout timeout)
-{
-  if (has_local_call()) {
-    return CallbackResult::failure("Cannot manage a slot from inside its guarded call");
-  }
-  if (!allow_dynamic_components_) {
-    return CallbackResult::failure("Dynamic component modification is disabled");
-  }
-  if (registration_validation_in_progress_) {
-    return CallbackResult::failure("Cannot mutate a slot from its registration validator");
-  }
-  if (source == target) {return CallbackResult::failure("Switch source and target must differ");}
-  auto old = entry(source), next = entry(target);
-  if (old->info.state != LifecycleState::ACTIVE) {
-    return CallbackResult::failure("Switch source must be active");
-  }
-  if (next->info.state == LifecycleState::UNLOADED) {
-    auto result = load(target, "");
-    if (!result.success) {return result;}
-  }
-  if (next->info.state == LifecycleState::UNCONFIGURED) {
-    auto result = configure(target);
-    if (!result.success) {return result;}
-  }
-  if (next->info.state != LifecycleState::INACTIVE) {
-    return CallbackResult::failure("Switch target must be inactive");
-  }
-  if (transfer_state) {
-    auto first = old->component->instance_;
-    auto second = next->component->instance_;
-    if (first->handover_state_type() != second->handover_state_type()) {
-      return CallbackResult::failure("Incompatible handover state types");
-    }
-  }
-  auto stopped = deactivate(source, timeout);
-  if (!stopped.result.success) {return stopped.result;}
-  return activate(
-    target, transfer_state && stopped.state ? std::move(*stopped.state) : HandoverState{});
-}
-
-template<class Threading>
 CallbackResult BasicSlotManager<Threading>::reload(
-  const std::string & name, bool transfer_state, Timeout timeout,
+  const std::string & name, HandoverState state, Timeout timeout,
   std::function<void(const std::string &)> refresh)
 {
   if (has_local_call()) {
@@ -800,12 +777,6 @@ CallbackResult BasicSlotManager<Threading>::reload(
   }
   auto item = entry(name);
   const bool was_active = item->info.state == LifecycleState::ACTIVE;
-  HandoverState snapshot;
-  if (was_active) {
-    auto stopped = deactivate(name, timeout);
-    if (!stopped.result.success) {return stopped.result;}
-    if (transfer_state && stopped.state) {snapshot = std::move(*stopped.state);}
-  }
   auto result = unload(name, timeout);
   if (!result.success) {return result;}
   if (refresh) {
@@ -814,7 +785,7 @@ CallbackResult BasicSlotManager<Threading>::reload(
   }
   result = load(name, "");
   if (result.success) {result = configure(name);}
-  if (result.success && was_active) {result = activate(name, std::move(snapshot));}
+  if (result.success && was_active) {result = activate(name, std::move(state));}
   return result;
 }
 
@@ -874,29 +845,33 @@ BasicSlotManager<Threading>::~BasicSlotManager()
 }
 
 template<class Threading>
-typename BasicSlotManager<Threading>::ActiveCall BasicSlotManager<Threading>::borrow(
-  const std::string & name,
-  std::optional<std::string_view> expected_instance_id)
-{
-  auto call = try_borrow(std::optional<std::string>{name}, expected_instance_id);
-  if (!call) {throw LifecycleError("Component is not available for active calls");}
-  return std::move(*call);
-}
-
-template<class Threading>
 std::optional<typename BasicSlotManager<Threading>::ActiveCall>
 BasicSlotManager<Threading>::try_borrow(
-  const std::optional<std::string> & component_name,
-  std::optional<std::string_view> expected_instance_id)
+  const std::string * component_name,
+  std::optional<std::string_view> expected_instance_id, bool throw_on_invalid)
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   if (!component_name && activation_policy_ == ActivationPolicy::MULTIPLE) {
-    throw LifecycleError("A list slot requires a component name");
+    if (throw_on_invalid) {throw LifecycleError("A list slot requires a component name");}
+    return std::nullopt;
   }
-  auto item = component_name ? entry_unlocked(*component_name) : selected_entry_unlocked();
+  std::shared_ptr<Entry> item;
+  if (component_name) {
+    auto found = component_entries_.find(*component_name);
+    if (found == component_entries_.end()) {
+      if (throw_on_invalid) {throw LifecycleError("Unknown component: " + *component_name);}
+      return std::nullopt;
+    }
+    item = found->second;
+  } else {
+    item = selected_entry_unlocked();
+  }
   if (!item) {return std::nullopt;}
   if (expected_instance_id && *expected_instance_id != std::string_view(item->info.instance_id)) {
-    throw LifecycleError("Component instance_id does not match the loaded instance");
+    if (throw_on_invalid) {
+      throw LifecycleError("Component instance_id does not match the loaded instance");
+    }
+    return std::nullopt;
   }
   if (shutdown_requested_ || !item->info.callable || item->info.state != LifecycleState::ACTIVE) {
     return std::nullopt;
@@ -1061,7 +1036,7 @@ CallbackResult BasicSlotManager<Threading>::activate_component(
 }
 
 template<class Threading>
-DeactivationResult<HandoverState> BasicSlotManager<Threading>::deactivate_component(
+CallbackResult BasicSlotManager<Threading>::deactivate_component(
   ComponentData & component)
 {
   if (component.external_component_process_) {
@@ -1069,11 +1044,9 @@ DeactivationResult<HandoverState> BasicSlotManager<Threading>::deactivate_compon
   }
   if (!component.instance_ || !component.activation_attempted_) {return {};}
   auto result = component.instance_->deactivate_state();
-  if (result.result.success) {
+  if (result.success) {
     component.activation_attempted_ = false;
     component.deactivation_pending_ = false;
-  } else {
-    result.state.reset();
   }
   return result;
 }
@@ -1096,10 +1069,10 @@ CallbackResult BasicSlotManager<Threading>::activate_subcomponents(
     for (auto subcomponent = activated.rbegin(); subcomponent != activated.rend(); ++subcomponent) {
       auto rollback = (*subcomponent)->storage_.slot->deactivate(
         (*subcomponent)->storage_.name, Timeout::max(), (*subcomponent)->storage_.instance_id);
-      if (!rollback.result.success) {
+      if (!rollback.success) {
         RPP_LOG_ERROR(
           *component.logger_, "Component activation rollback failed: %s",
-          rollback.result.message.c_str());
+          rollback.message.c_str());
       }
     }
   }
@@ -1122,7 +1095,7 @@ CallbackResult BasicSlotManager<Threading>::deactivate_subcomponents(
       ++subcomponent)
     {
       auto result = slot->second->deactivate((*subcomponent)->storage_.name, timeout,
-          (*subcomponent)->storage_.instance_id).result;
+          (*subcomponent)->storage_.instance_id);
       if (!result.success) {
         if (first_error.success) {first_error = result;} else {
           RPP_LOG_ERROR(
@@ -1191,7 +1164,7 @@ CallbackResult BasicSlotManager<Threading>::process_deactivations(
   CallbackResult first_error;
   if (Threading::take(component.deactivation_pending_)) {
     try {
-      first_error = deactivate(name, timeout).result;
+      first_error = deactivate(name, timeout);
     } catch (const std::exception & error) {
       first_error = CallbackResult::failure(error.what());
     } catch (...) {
@@ -1271,26 +1244,24 @@ CallbackResult BasicSlotManager<Threading>::activate_external_component(
 }
 
 template<class Threading>
-DeactivationResult<HandoverState> BasicSlotManager<Threading>::deactivate_external_component(
+CallbackResult BasicSlotManager<Threading>::deactivate_external_component(
   ComponentData & component)
 {
   if (!component.activation_attempted_) {return {};}
   auto * adapter = dynamic_cast<ClientAdapter *>(component.instance_.get());
-  if (!adapter) {return {CallbackResult::failure("Remote component has no client adapter"), {}};}
+  if (!adapter) {return CallbackResult::failure("Remote component has no client adapter");}
   try {
     auto result = component.external_component_process_->deactivate_component(
-      adapter->get_info_adapter_client__().connection_name, *adapter);
-    if (result.result.success) {
+      adapter->get_info_adapter_client__().connection_name);
+    if (result.success) {
       component.activation_attempted_ = false;
       component.deactivation_pending_ = false;
-    } else {
-      result.state.reset();
     }
     return result;
   } catch (const kj::Exception & error) {
-    return {CallbackResult::failure(error.getDescription().cStr()), {}};
+    return CallbackResult::failure(error.getDescription().cStr());
   } catch (const std::exception & error) {
-    return {CallbackResult::failure(error.what()), {}};
+    return CallbackResult::failure(error.what());
   }
 }
 

@@ -231,10 +231,13 @@ TYPED_TEST(ScriptRuntimeBuilderTest, ScriptPathLoadsActiveConfigurationAndDrives
     ASSERT_TRUE(active);
     EXPECT_EQ(active->value, 10);
   }
-  EXPECT_EQ(context.with_active_component<ScriptBuilderPlugin>(
-      "controller", "primary", [](auto & plugin) {return plugin.value;}), 10);
+  const auto [success, value] = context.with_active_component<ScriptBuilderPlugin>(
+    "controller", "primary", [](auto & plugin) {return plugin.value;});
+  EXPECT_TRUE(success);
+  EXPECT_EQ(value, 10);
 
-  ASSERT_TRUE(runtime.switch_component("controller", "primary", "backup").success);
+  ASSERT_TRUE(runtime.deactivate_component("controller", "primary").success);
+  ASSERT_TRUE(runtime.activate_component("controller", "backup").success);
   EXPECT_EQ(primary->deactivate_calls, 1);
   EXPECT_EQ(backup->activate_calls, 1);
   {

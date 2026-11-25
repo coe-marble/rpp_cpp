@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <utility>
 #include <string>
@@ -117,6 +118,31 @@ struct ParameterConverter<int64_t>
 {
   static ParameterValue to(int64_t value);
   static int64_t from(const ParameterValue & value);
+};
+
+template<typename T>
+struct ParameterConverter<
+  T, std::enable_if_t<std::is_integral_v<T>&& std::is_unsigned_v<T>&& !std::is_same_v<T, bool>>>
+{
+  static ParameterValue to(T value)
+  {
+    if (static_cast<uint64_t>(value) > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      throw std::out_of_range("Unsigned parameter exceeds the signed 64-bit storage range.");
+    }
+    return ParameterValue(static_cast<int64_t>(value));
+  }
+
+  static T from(const ParameterValue & value)
+  {
+    if (!std::holds_alternative<int64_t>(value.value)) {
+      throw std::runtime_error("Parameter value is not an int.");
+    }
+    const auto number = std::get<int64_t>(value.value);
+    if (number < 0 || static_cast<uint64_t>(number) > std::numeric_limits<T>::max()) {
+      throw std::out_of_range("Unsigned parameter is out of range.");
+    }
+    return static_cast<T>(number);
+  }
 };
 
 template<>

@@ -80,7 +80,7 @@ CallbackResult SubcomponentContext::activate(HandoverState state) const
   });
 }
 
-DeactivationResult<HandoverState> SubcomponentContext::deactivate(Timeout timeout) const
+CallbackResult SubcomponentContext::deactivate(Timeout timeout) const
 {
   return context_->visit([&](auto & component) {
              return component.owning_slot_->deactivate(component.registration_name_, timeout,

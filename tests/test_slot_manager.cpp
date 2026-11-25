@@ -64,16 +64,13 @@ TEST_F(ManagerTest, NormalFlowIdempotenceAndInstanceIdentity)
   EXPECT_EQ(manager.runtime("localizer")->get_context().get_instance_id(), instance_id);
   ASSERT_TRUE(manager.activate("localizer").success);
   EXPECT_EQ(plugins[0]->events, (std::vector<std::string>{"configure", "activate"}));
-  EXPECT_EQ(
-    manager.with_active<Localizer>(
-      "localizer", [](auto & plugin) {
-        return plugin.estimate.position;
-      }), (std::vector<double>{1.0}));
+  auto [success, value] = manager.with_active<Localizer>(
+    "localizer", [](auto & plugin) {return plugin.estimate.position;});
+  ASSERT_TRUE(success);
+  ASSERT_TRUE(value.has_value());
+  EXPECT_EQ(*value, (std::vector<double>{1.0}));
   auto stopped = manager.deactivate("localizer");
-  ASSERT_TRUE(stopped.result.success);
-  ASSERT_TRUE(stopped.state.has_value());
-  EXPECT_EQ(stopped.state->get<Estimate>().position, (std::vector<double>{1.0}));
-  EXPECT_FALSE(manager.deactivate("localizer").state.has_value());
+  ASSERT_TRUE(stopped.success);
   ASSERT_TRUE(manager.cleanup("localizer").success);
   EXPECT_EQ(manager.get_status("localizer").instance_id, instance_id);
   ASSERT_TRUE(manager.unload("localizer").success);
@@ -81,10 +78,10 @@ TEST_F(ManagerTest, NormalFlowIdempotenceAndInstanceIdentity)
   EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::UNLOADED);
   ready();
   EXPECT_NE(manager.get_status("localizer").instance_id, instance_id);
-  EXPECT_THROW(
-    manager.with_active<Localizer>(
-      "localizer", [](
-        auto &) {}, instance_id), rpp::LifecycleError);
+  const auto stale = manager.with_active<Localizer>(
+    "localizer", [](auto &) {}, instance_id);
+  EXPECT_FALSE(stale.first);
+  EXPECT_FALSE(stale.second.has_value());
 }
 
 TEST_F(ManagerTest, SameComponentPathHasDistinctInstancesAndUniqueRegistrationNames)
@@ -107,7 +104,9 @@ TEST_F(ManagerTest, InvalidTransitionLeavesStateAndBlocksDomainCalls)
   EXPECT_FALSE(manager.activate("localizer").success);
   EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::UNCONFIGURED);
   EXPECT_TRUE(plugins[0]->events.empty());
-  EXPECT_THROW(manager.with_active<Localizer>("localizer", [](auto &) {}), rpp::LifecycleError);
+  const auto result = manager.with_active<Localizer>("localizer", [](auto &) {});
+  EXPECT_FALSE(result.first);
+  EXPECT_FALSE(result.second.has_value());
 }
 
 TEST_F(ManagerTest, FailedConfigurationRetainsTruthfulStateAndDoesNotAffectSibling)
@@ -117,7 +116,7 @@ TEST_F(ManagerTest, FailedConfigurationRetainsTruthfulStateAndDoesNotAffectSibli
   plugins.back()->reject = "configure";
   EXPECT_FALSE(manager.configure("failed").success);
   EXPECT_EQ(manager.get_state("failed"), rpp::LifecycleState::ERROR);
-  EXPECT_FALSE(manager.deactivate("failed").result.success);
+  EXPECT_FALSE(manager.deactivate("failed").success);
   EXPECT_EQ(manager.get_state("other"), rpp::LifecycleState::ACTIVE);
   EXPECT_TRUE(manager.unload("failed").success);
 }
@@ -126,10 +125,12 @@ TEST_F(ConcurrentManagerTest, DirectPointersRemainCallableWhileInactive)
 {
   ready();
   auto instance = manager.runtime("localizer")->get_instance<Localizer>();
-  ASSERT_TRUE(manager.deactivate("localizer").result.success);
+  ASSERT_TRUE(manager.deactivate("localizer").success);
   EXPECT_EQ(instance->get_position(), (std::vector<double>{1.0}));
   EXPECT_EQ(manager.runtime("localizer")->get_instance<Localizer>(), instance);
-  EXPECT_THROW(manager.with_active<Localizer>("localizer", [](auto &) {}), rpp::LifecycleError);
+  const auto result = manager.with_active<Localizer>("localizer", [](auto &) {});
+  EXPECT_FALSE(result.first);
+  EXPECT_FALSE(result.second.has_value());
   EXPECT_TRUE(manager.close().success);
 }
 
@@ -154,7 +155,7 @@ TEST_F(ConcurrentManagerTest, LifecycleCallbacksDoNotHoldTheSlotGate)
   const auto stopped = manager.deactivate("localizer");
   // Finish the reader even when the bounded callback observation fails.
   reader.get();
-  EXPECT_TRUE(stopped.result.success);
+  EXPECT_TRUE(stopped.success);
   EXPECT_TRUE(manager.close().success);
 }
 
@@ -164,7 +165,7 @@ TEST_F(ConcurrentManagerTest, ContextDelegatesToTheConcurrentManager)
   const auto retained_view = manager.subcomponent_context("localizer");
   const auto & context = *retained_view;
   EXPECT_TRUE(context.is_active());
-  ASSERT_TRUE(context.deactivate().result.success);
+  ASSERT_TRUE(context.deactivate().success);
   EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::INACTIVE);
   ASSERT_TRUE(context.activate().success);
   EXPECT_TRUE(context.is_active());
@@ -225,11 +226,11 @@ TEST_F(ConcurrentManagerTest, SlotGateCountsAllConcurrentCalls)
   release_first.set_value();
   first.get();
   EXPECT_EQ(manager.get_status("localizer").in_flight, 1u);
-  EXPECT_FALSE(manager.deactivate("localizer", std::chrono::milliseconds(0)).result.success);
+  EXPECT_FALSE(manager.deactivate("localizer", std::chrono::milliseconds(0)).success);
   release_second.set_value();
   second.get();
   EXPECT_EQ(manager.get_status("localizer").in_flight, 0u);
-  EXPECT_TRUE(manager.deactivate("localizer").result.success);
+  EXPECT_TRUE(manager.deactivate("localizer").success);
   EXPECT_TRUE(manager.close().success);
 }
 
@@ -259,48 +260,35 @@ TEST_F(ConcurrentManagerTest, DrainTimeoutRetainsInstanceAndAllowsRetry)
   EXPECT_TRUE(manager.unload("localizer").success);
 }
 
-TEST_F(ManagerTest, SwitchingCopiesStateAndDoesNotReactivateOnTargetFailure)
-{
-  ready("ekf");
-  ASSERT_TRUE(manager.load("particle", "/workspace/particle").success);
-  ASSERT_TRUE(manager.switch_components("ekf", "particle", true).success);
-  plugins[0]->estimate.position.push_back(99.0);
-  EXPECT_EQ(
-    manager.with_active<Localizer>(
-      "particle", [](auto & plugin) {
-        return plugin.estimate.position;
-      }), (std::vector<double>{1.0}));
-  plugins[0]->reject = "activate";
-  EXPECT_FALSE(manager.switch_components("particle", "ekf", true).success);
-  EXPECT_EQ(manager.get_state("particle"), rpp::LifecycleState::INACTIVE);
-  EXPECT_EQ(manager.get_state("ekf"), rpp::LifecycleState::ERROR);
-}
-
-TEST_F(ManagerTest, ReloadConstructsNewContextAndOptionallyTransfersState)
+TEST_F(ManagerTest, ReloadPreservesActiveStatusAndUsesProvidedState)
 {
   ready();
   plugins[0]->estimate.position = {7.0};
   auto instance_id = manager.get_status("localizer").instance_id;
-  ASSERT_TRUE(manager.reload("localizer", true).success);
+  ASSERT_TRUE(manager.reload("localizer", Estimate{{8.0}}).success);
   EXPECT_NE(manager.get_status("localizer").instance_id, instance_id);
-  EXPECT_EQ(plugins.size(), 2u);
-  EXPECT_EQ(
-    manager.with_active<Localizer>(
-      "localizer", [](auto & plugin) {
-        return plugin.estimate.position;
-      }), (std::vector<double>{7.0}));
+  EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::ACTIVE);
+  ASSERT_EQ(plugins.size(), 2u);
+  EXPECT_EQ(plugins.back()->estimate.position, (std::vector<double>{8.0}));
+  instance_id = manager.get_status("localizer").instance_id;
+  ASSERT_TRUE(manager.deactivate("localizer").success);
   ASSERT_TRUE(manager.reload("localizer").success);
+  EXPECT_NE(manager.get_status("localizer").instance_id, instance_id);
+  EXPECT_EQ(plugins.size(), 3u);
+  EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::INACTIVE);
   EXPECT_EQ(plugins.back()->estimate.position, (std::vector<double>{1.0}));
 }
 
 TEST_F(ManagerTest, ReentrantManagementFromGuardIsRejected)
 {
   ready();
-  auto result = manager.with_active<Localizer>(
+  auto [success, result] = manager.with_active<Localizer>(
     "localizer", [&](auto &) {
       return manager.deactivate("localizer");
     });
-  EXPECT_FALSE(result.result.success);
+  ASSERT_TRUE(success);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->success);
   EXPECT_EQ(manager.get_state("localizer"), rpp::LifecycleState::ACTIVE);
 }
 

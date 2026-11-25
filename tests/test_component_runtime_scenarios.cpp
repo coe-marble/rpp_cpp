@@ -3,8 +3,10 @@
 
 #include <chrono>
 #include <future>
+#include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -13,6 +15,7 @@
 #include <vector>
 
 #include "rpp_cpp/context.hpp"
+#include "rpp_cpp/clock.hpp"
 
 namespace
 {
@@ -21,6 +24,20 @@ using namespace std::chrono_literals;
 using rpp::testing::ControllerState;
 using rpp::testing::EventLog;
 using rpp::testing::ScenarioController;
+
+TEST(RuntimeClock, MockTimeRejectsValuesOutsideUnsignedNanosecondsWithoutChangingTime)
+{
+  rpp::RppClockMock clock(1.0);
+  EXPECT_EQ(clock.now_nanoseconds(), std::uint64_t{1000000000});
+  EXPECT_THROW(clock.set_time(-1.0), std::out_of_range);
+  EXPECT_THROW(clock.set_time(std::numeric_limits<double>::infinity()), std::out_of_range);
+  EXPECT_THROW(clock.set_time(std::numeric_limits<double>::quiet_NaN()), std::out_of_range);
+  EXPECT_THROW(clock.set_time(std::numeric_limits<std::uint64_t>::max() / 1e9), std::out_of_range);
+  EXPECT_THROW(clock.elapse(-2.0), std::out_of_range);
+  EXPECT_EQ(clock.now_nanoseconds(), std::uint64_t{1000000000});
+  clock.elapse(-0.5);
+  EXPECT_EQ(clock.now_nanoseconds(), std::uint64_t{500000000});
+}
 
 template<typename Runtime, typename = void>
 struct HasRootInstanceAccessor : std::false_type {};
@@ -80,10 +97,12 @@ public:
     throw std::logic_error("Missing scenario controller: " + name);
   }
 
-  int call(const std::string & name)
+  std::optional<int> call(const std::string & name)
   {
-    return root->get_context().template with_active_component<ScenarioController>(
+    auto [success, value] = root->get_context().template with_active_component<ScenarioController>(
       "controllers", name, [](auto & controller) {return controller.state.value;});
+    EXPECT_EQ(success, value.has_value());
+    return value;
   }
 };
 
@@ -97,6 +116,79 @@ struct PolicyNames
 };
 using Policies = ::testing::Types<rpp::SingleThreaded, rpp::Concurrent>;
 TYPED_TEST_SUITE(ComponentRuntimeScenarios, Policies, PolicyNames);
+
+TYPED_TEST(ComponentRuntimeScenarios, GuardedCallReturnsFailureWithoutCallingUnavailablePlugins)
+{
+  this->build();
+  ASSERT_TRUE(this->root->configure().success);
+  ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
+  const auto & context = this->root->get_context();
+  int calls = 0;
+  auto callback = [&](auto &) {++calls; return 7;};
+  struct OtherPlugin : rpp::Plugin {};
+  const auto check_failure = [](const auto & result) {
+      EXPECT_FALSE(result.first);
+      EXPECT_FALSE(result.second.has_value());
+    };
+  check_failure(context.template with_active_component<ScenarioController>(
+      "missing", "a", callback));
+  check_failure(context.template with_active_component<ScenarioController>(
+      "controllers", "missing", callback));
+  check_failure(context.template with_active_component<OtherPlugin>(
+      "controllers", "a", callback));
+  check_failure(context.template with_active_component<ScenarioController>(
+      "controllers", "a", callback, "stale-instance-id"));
+  EXPECT_EQ(calls, 0);
+
+  const auto selected = context.template with_active_component<ScenarioController>(
+    "controllers", "", callback);
+  EXPECT_TRUE(selected.first);
+  EXPECT_EQ(selected.second, 7);
+  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
+  check_failure(context.template with_active_component<ScenarioController>(
+      "controllers", "a", callback));
+  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(this->root->close().success);
+  check_failure(context.template with_active_component<ScenarioController>(
+      "controllers", "a", callback));
+  EXPECT_EQ(calls, 1);
+}
+
+TYPED_TEST(ComponentRuntimeScenarios, GuardedCallOwnsResultsAndReleasesGuardAfterCallbackExceptions)
+{
+  this->build();
+  ASSERT_TRUE(this->root->configure().success);
+  ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
+  const auto & context = this->root->get_context();
+  struct Value
+  {
+    int value;
+    explicit Value(int v)
+    : value(v) {}
+    Value(Value &&) = default;
+    Value(const Value &) = delete;
+  };
+  auto [success, value] = context.template with_active_component<ScenarioController>(
+    "controllers", "a", [](auto &) {return Value{7};});
+  ASSERT_TRUE(success);
+  ASSERT_TRUE(value.has_value());
+  EXPECT_EQ(value->value, 7);
+  const auto void_result = context.template with_active_component<ScenarioController>(
+    "controllers", "a", [](auto &) {});
+  EXPECT_TRUE(void_result.first);
+  EXPECT_TRUE(void_result.second.has_value());
+  const auto false_result = context.template with_active_component<ScenarioController>(
+    "controllers", "a", [](auto &) {return false;});
+  EXPECT_TRUE(false_result.first);
+  EXPECT_EQ(false_result.second, false);
+  const auto exception = context.template with_active_component<ScenarioController>(
+    "controllers", "a", [](auto &) -> int {throw std::runtime_error("callback failed");});
+  EXPECT_FALSE(exception.first);
+  EXPECT_FALSE(exception.second.has_value());
+  EXPECT_EQ(this->root->get_subcomponent_statuses("controllers").front().in_flight, 0u);
+  EXPECT_TRUE(this->root->deactivate_component("controllers", "a").success);
+}
 
 TYPED_TEST(ComponentRuntimeScenarios, ScriptOwnsSlotsDirectlyAndCandidatesShareTheirSlotManager)
 {
@@ -213,7 +305,7 @@ TYPED_TEST(ComponentRuntimeScenarios,
   ASSERT_TRUE(this->component_root->activate().success);
   EXPECT_TRUE(context->is_active());
   EXPECT_TRUE(this->controllers.at("grandchild")->context->is_active());
-  ASSERT_TRUE(this->component_root->deactivate().result.success);
+  ASSERT_TRUE(this->component_root->deactivate().success);
   EXPECT_FALSE(this->controllers.at("grandchild")->context->is_active());
   ASSERT_TRUE(this->component_root->cleanup().success);
   ASSERT_TRUE(this->component_root->close().success);
@@ -250,7 +342,7 @@ TYPED_TEST(ComponentRuntimeScenarios, ComponentRootUsesSlotStateChecksAndExplici
   EXPECT_EQ(rpp::ComponentRuntimeAccess::status(*this->component_root).state,
       rpp::LifecycleState::ERROR);
   EXPECT_FALSE(this->component_root->configure().success);
-  ASSERT_TRUE(this->component_root->deactivate().result.success);
+  ASSERT_TRUE(this->component_root->deactivate().success);
   ASSERT_TRUE(this->component_root->cleanup().success);
   this->controllers.at("root")->reject_activation = false;
   ASSERT_TRUE(this->component_root->configure().success);
@@ -265,19 +357,17 @@ TYPED_TEST(ComponentRuntimeScenarios, ActivateCallDeactivateAndReactivate)
   this->build();
   EXPECT_TRUE(this->log.snapshot().empty());
   ASSERT_TRUE(this->root->configure().success);
-  EXPECT_THROW(this->call("a"), rpp::LifecycleError);
+  EXPECT_FALSE(this->call("a").has_value());
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   EXPECT_EQ(this->call("a"), 0);
   EXPECT_EQ(this->state("b"), rpp::LifecycleState::INACTIVE);
   this->controllers.at("a")->state.value = 42;
   auto stopped = this->root->deactivate_component("controllers", "a");
-  ASSERT_TRUE(stopped.result.success);
-  ASSERT_TRUE(stopped.state.has_value());
-  EXPECT_EQ(stopped.state->template get<ControllerState>().value, 42);
-  EXPECT_THROW(this->call("a"), rpp::LifecycleError);
+  ASSERT_TRUE(stopped.success);
+  EXPECT_FALSE(this->call("a").has_value());
   ASSERT_TRUE(
-    this->root->activate_component("controllers", "a", std::move(*stopped.state)).success);
+    this->root->activate_component("controllers", "a", ControllerState{42}).success);
   EXPECT_EQ(this->call("a"), 42);
   ASSERT_TRUE(this->root->close().success);
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{
@@ -294,10 +384,13 @@ TYPED_TEST(ComponentRuntimeScenarios, ExclusiveSwitchTransfersStateThenColdSwitc
   EXPECT_FALSE(this->root->activate_component("controllers", "b").success);
   this->log.clear();
 
-  ASSERT_TRUE(this->root->switch_component("controllers", "a", "b", true).success);
+  const auto handover = this->controllers.at("a")->state;
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
+  ASSERT_TRUE(this->root->activate_component("controllers", "b",
+      ControllerState{handover}).success);
   EXPECT_EQ(this->state("a"), rpp::LifecycleState::INACTIVE);
   EXPECT_EQ(this->state("b"), rpp::LifecycleState::ACTIVE);
-  EXPECT_THROW(this->call("a"), rpp::LifecycleError);
+  EXPECT_FALSE(this->call("a").has_value());
   EXPECT_EQ(this->call("b"), 42);
   this->controllers.at("a")->state.value = 99;
   EXPECT_EQ(this->call("b"), 42);  // Handover is an owned snapshot.
@@ -305,9 +398,10 @@ TYPED_TEST(ComponentRuntimeScenarios, ExclusiveSwitchTransfersStateThenColdSwitc
   EXPECT_EQ(active_context.template get_instance<ScenarioController>(),
     this->controllers.at("b"));
 
-  ASSERT_TRUE(this->root->switch_component("controllers", "b", "a", false).success);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "b").success);
+  ASSERT_TRUE(this->root->activate_component("controllers", "a").success);
   EXPECT_EQ(this->call("a"), 0);
-  EXPECT_THROW(this->call("b"), rpp::LifecycleError);
+  EXPECT_FALSE(this->call("b").has_value());
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{
       "deactivate a", "activate b", "deactivate b", "activate a"}));
 }
@@ -319,16 +413,16 @@ TYPED_TEST(ComponentRuntimeScenarios, SourceDeactivationFailurePreventsTargetAct
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   this->controllers.at("a")->reject_deactivation = true;
   this->log.clear();
-  EXPECT_FALSE(this->root->switch_component("controllers", "a", "b").success);
+  EXPECT_FALSE(this->root->deactivate_component("controllers", "a").success);
   EXPECT_EQ(this->state("a"), rpp::LifecycleState::ERROR);
   EXPECT_EQ(this->state("b"), rpp::LifecycleState::INACTIVE);
-  EXPECT_THROW(this->call("a"), rpp::LifecycleError);
-  EXPECT_THROW(this->call("b"), rpp::LifecycleError);
+  EXPECT_FALSE(this->call("a").has_value());
+  EXPECT_FALSE(this->call("b").has_value());
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{"deactivate a"}));
 
   // Recovery is explicit: stop the failed source before activating the target.
   this->controllers.at("a")->reject_deactivation = false;
-  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").result.success);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
   ASSERT_TRUE(this->root->activate_component("controllers", "b").success);
   EXPECT_EQ(this->call("b"), 0);
 }
@@ -341,28 +435,28 @@ TYPED_TEST(ComponentRuntimeScenarios,
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   this->controllers.at("b")->reject_activation = true;
   this->log.clear();
-  EXPECT_FALSE(this->root->switch_component("controllers", "a", "b").success);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
+  EXPECT_FALSE(this->root->activate_component("controllers", "b").success);
   EXPECT_EQ(this->state("a"), rpp::LifecycleState::INACTIVE);
   EXPECT_EQ(this->state("b"), rpp::LifecycleState::ERROR);
-  EXPECT_THROW(this->call("a"), rpp::LifecycleError);
-  EXPECT_THROW(this->call("b"), rpp::LifecycleError);
+  EXPECT_FALSE(this->call("a").has_value());
+  EXPECT_FALSE(this->call("b").has_value());
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{"deactivate a", "activate b"}));
 
   this->controllers.at("b")->reject_activation = false;
-  ASSERT_TRUE(this->root->deactivate_component("controllers", "b").result.success);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "b").success);
   ASSERT_TRUE(this->root->cleanup_component("controllers", "b").success);
   ASSERT_TRUE(this->root->configure_component("controllers", "b").success);
   ASSERT_TRUE(this->root->activate_component("controllers", "b").success);
   EXPECT_EQ(this->call("b"), 0);
 }
 
-TYPED_TEST(ComponentRuntimeScenarios, StaticSlotAllowsLifecycleButRejectsSwitching)
+TYPED_TEST(ComponentRuntimeScenarios, StaticSlotAllowsLifecycleForTheSelectedEntry)
 {
   this->build("Option[controllers::Controller]", false);
   ASSERT_TRUE(this->root->configure().success);
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   this->log.clear();
-  EXPECT_FALSE(this->root->switch_component("controllers", "a", "b").success);
   EXPECT_FALSE(this->root->activate_component("controllers", "b").success);
   EXPECT_TRUE(this->log.snapshot().empty());
   EXPECT_EQ(this->call("a"), 0);
@@ -378,7 +472,7 @@ TYPED_TEST(ComponentRuntimeScenarios, ListActivatesBothAndShutdownUsesReverseReg
   ASSERT_TRUE(this->root->get_context().activate_subcomponents().success);
   EXPECT_EQ(this->call("a"), 0);
   EXPECT_EQ(this->call("b"), 0);
-  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").result.success);
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
   EXPECT_EQ(this->call("b"), 0);
   ASSERT_TRUE(this->root->activate_component("controllers", "a").success);
   this->log.clear();
@@ -425,18 +519,24 @@ TYPED_TEST(ComponentRuntimeScenarios, NestedSwitchStopsOldDescendantsAndStartsNe
   this->controllers.at("a")->state.value = 42;
   this->controllers.at("a.left.leaf")->state.value = 7;
   this->log.clear();
-  ASSERT_TRUE(this->root->switch_component("controllers", "a", "b", true).success);
+  const auto handover = this->controllers.at("a")->state;
+  ASSERT_TRUE(this->root->deactivate_component("controllers", "a").success);
+  ASSERT_TRUE(this->root->activate_component("controllers", "b",
+      ControllerState{handover}).success);
   EXPECT_EQ(this->log.snapshot(), (std::vector<std::string>{
       "deactivate a", "deactivate a.right", "deactivate a.left", "deactivate a.left.leaf",
       "activate b.left.leaf", "activate b.left", "activate b.right", "activate b"}));
   EXPECT_EQ(this->call("b"), 42);
   const auto & a_left = *this->controllers.at("a.left")->context;
   const auto & b_left = *this->controllers.at("b.left")->context;
-  EXPECT_THROW(a_left.template with_active_component<ScenarioController>(
-      "children", "a.left.leaf", [](auto & plugin) {return plugin.state.value;}),
-    rpp::LifecycleError);
-  EXPECT_EQ(b_left.template with_active_component<ScenarioController>(
-      "children", "b.left.leaf", [](auto & plugin) {return plugin.state.value;}), 0);
+  const auto unavailable = a_left.template with_active_component<ScenarioController>(
+    "children", "a.left.leaf", [](auto & plugin) {return plugin.state.value;});
+  EXPECT_FALSE(unavailable.first);
+  EXPECT_FALSE(unavailable.second.has_value());
+  const auto available = b_left.template with_active_component<ScenarioController>(
+    "children", "b.left.leaf", [](auto & plugin) {return plugin.state.value;});
+  EXPECT_TRUE(available.first);
+  EXPECT_EQ(available.second, 0);
 
   // Root handover does not implicitly transfer each descendant's state.
   EXPECT_EQ(this->controllers.at("a.left.leaf")->state.value, 7);
@@ -499,12 +599,7 @@ TEST_F(ConcurrentRuntimeScenarios, SwitchClosesAdmissionAndWaitsForTheGuardedCal
                  while (std::chrono::steady_clock::now() < deadline) {
                    const auto entries = root->get_subcomponent_statuses("controllers");
                    if (entries.front().transition.has_value()) {
-                     bool rejected = false;
-                     try {
-                       call("a");
-                     } catch (const rpp::LifecycleError &) {
-                       rejected = true;
-                     }
+                     const bool rejected = !call("a").has_value();
                      log.add("call finished");
                      return rejected;
                    }
@@ -515,9 +610,12 @@ TEST_F(ConcurrentRuntimeScenarios, SwitchClosesAdmissionAndWaitsForTheGuardedCal
     });
   });
   ASSERT_EQ(ready.wait_for(2s), std::future_status::ready);
-  const auto result = root->switch_component("controllers", "a", "b", true, 3s);
-  EXPECT_TRUE(worker.get());
+  const auto result = root->deactivate_component("controllers", "a", 3s);
+  const auto [success, value] = worker.get();
+  EXPECT_TRUE(success);
+  EXPECT_EQ(value, true);
   ASSERT_TRUE(result.success) << result.message;
+  ASSERT_TRUE(root->activate_component("controllers", "b").success);
   EXPECT_EQ(log.snapshot(), (std::vector<std::string>{
       "call entered", "call finished", "deactivate a", "activate b"}));
   EXPECT_EQ(state("a"), rpp::LifecycleState::INACTIVE);
@@ -544,14 +642,16 @@ TEST_F(ConcurrentRuntimeScenarios, DeactivationTimeoutKeepsInstanceAndAllowsExpl
   const auto observed = ready.wait_for(2s);
   if (observed != std::future_status::ready) {release.set_value();}
   ASSERT_EQ(observed, std::future_status::ready);
-  EXPECT_FALSE(root->deactivate_component("controllers", "a", 0ms).result.success);
+  EXPECT_FALSE(root->deactivate_component("controllers", "a", 0ms).success);
   EXPECT_EQ(state("a"), rpp::LifecycleState::ERROR);
   EXPECT_EQ(root->get_subcomponent_statuses("controllers").front().instance_id, identity);
   EXPECT_TRUE(log.snapshot().empty());  // No callback while the guard is held.
-  EXPECT_THROW(call("a"), rpp::LifecycleError);
+  EXPECT_FALSE(call("a").has_value());
   release.set_value();
-  EXPECT_TRUE(worker.get());
-  ASSERT_TRUE(root->deactivate_component("controllers", "a", 1s).result.success);
+  const auto [success, value] = worker.get();
+  EXPECT_TRUE(success);
+  EXPECT_EQ(value, true);
+  ASSERT_TRUE(root->deactivate_component("controllers", "a", 1s).success);
   EXPECT_EQ(state("a"), rpp::LifecycleState::INACTIVE);
   ASSERT_TRUE(root->activate_component("controllers", "a").success);
   EXPECT_EQ(call("a"), 0);
@@ -578,21 +678,24 @@ TEST_F(ConcurrentRuntimeScenarios, SwitchTimeoutDoesNotActivateTargetAndRecovery
   const auto observed = ready.wait_for(2s);
   if (observed != std::future_status::ready) {release.set_value();}
   ASSERT_EQ(observed, std::future_status::ready);
-  EXPECT_FALSE(root->switch_component("controllers", "a", "b", true, 0ms).success);
+  EXPECT_FALSE(root->deactivate_component("controllers", "a", 0ms).success);
   EXPECT_EQ(state("a"), rpp::LifecycleState::ERROR);
   EXPECT_EQ(state("b"), rpp::LifecycleState::INACTIVE);
   EXPECT_TRUE(log.snapshot().empty());
-  EXPECT_THROW(call("a"), rpp::LifecycleError);
-  EXPECT_THROW(call("b"), rpp::LifecycleError);
+  EXPECT_FALSE(call("a").has_value());
+  EXPECT_FALSE(call("b").has_value());
   release.set_value();
-  EXPECT_TRUE(worker.get());
+  const auto [success, value] = worker.get();
+  EXPECT_TRUE(success);
+  EXPECT_EQ(value, true);
 
   // A timed-out source requires explicit lifecycle recovery before another switch.
   auto stopped = root->deactivate_component("controllers", "a", 1s);
-  ASSERT_TRUE(stopped.result.success);
-  ASSERT_TRUE(stopped.state.has_value());
-  ASSERT_TRUE(root->activate_component("controllers", "a", std::move(*stopped.state)).success);
-  ASSERT_TRUE(root->switch_component("controllers", "a", "b", true, 1s).success);
+  ASSERT_TRUE(stopped.success);
+  ASSERT_TRUE(root->activate_component("controllers", "a", ControllerState{42}).success);
+  const auto handover = controllers.at("a")->state;
+  ASSERT_TRUE(root->deactivate_component("controllers", "a", 1s).success);
+  ASSERT_TRUE(root->activate_component("controllers", "b", ControllerState{handover}).success);
   EXPECT_EQ(call("b"), 42);
   EXPECT_EQ(log.snapshot(), (std::vector<std::string>{
       "deactivate a", "activate a", "deactivate a", "activate b"}));

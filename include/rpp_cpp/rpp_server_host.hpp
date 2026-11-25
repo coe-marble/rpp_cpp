@@ -82,7 +82,7 @@ private:
       };
     auto dynamic_operations_disabled = [] {
         return CallbackResult::failure(
-          "This hosted slot is lifecycle-only; load, unload, reload, and switch "
+          "This hosted slot is lifecycle-only; load, unload, and reload "
           "are available only for dynamic top-level components");
       };
     auto refresh_adapter = [adapter, manager]() -> CallbackResult {
@@ -123,10 +123,10 @@ private:
             instance_id) : missing(instance_id);
         },
         [manager, entry_name,
-        missing](const std::string & instance_id) -> DeactivationResult<HandoverState> {
+        missing](const std::string & instance_id) {
           auto component = entry_name(instance_id);
           return component ? manager->deactivate(*component, Timeout::max(), instance_id) :
-                 DeactivationResult<HandoverState>{missing(instance_id), {}};
+                 missing(instance_id);
         },
         [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
         dynamic_operations_disabled](const std::string & instance_id) {
@@ -137,26 +137,16 @@ private:
           return result.success && manager->selected_runtime() ? refresh_adapter() : result;
         },
         [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
-        dynamic_operations_disabled](const std::string & instance_id, bool transfer_state) {
+        dynamic_operations_disabled](const std::string & instance_id, HandoverState state) {
           if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
           auto component = entry_name(instance_id);
           if (!component) {return missing(instance_id);}
-          auto result = manager->reload(*component, transfer_state);
-          return result.success ? refresh_adapter() : result;
-        },
-        [manager, entry_name, missing, refresh_adapter, allows_dynamic_operations,
-        dynamic_operations_disabled](
-          const std::string & source_id, const std::string & target_id, bool transfer_state) {
-          if (!allows_dynamic_operations) {return dynamic_operations_disabled();}
-          auto source = entry_name(source_id);
-          auto target = entry_name(target_id);
-          if (!source) {return missing(source_id);}
-          if (!target) {return missing(target_id);}
-          auto result = manager->switch_components(*source, *target, transfer_state);
+          auto result = manager->reload(*component, std::move(state));
           return result.success ? refresh_adapter() : result;
         },
         [manager] {return manager->close();},
         std::move(refresh_adapter),
+        allows_dynamic_operations,
     });
     adapters_[name] = adapter;
     slots_[name] = std::move(manager);

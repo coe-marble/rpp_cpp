@@ -9,7 +9,7 @@
 namespace rpp
 {
 
-/// Move-only type erasure for a lifecycle handover payload.
+/// Move-only type erasure for caller-provided activation state.
 /// A handover has one destination, so it intentionally never copies its contained state.
 class HandoverState final
 {

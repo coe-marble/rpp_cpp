@@ -45,17 +45,21 @@ double RppClockRealTime::now_seconds() const
 }
 
     // Returns current timestamp in nanoseconds as an integer
-uint64_t RppClockRealTime::now_nanoseconds() const
+std::uint64_t RppClockRealTime::now_nanoseconds() const
 {
 #ifdef RPP_USE_ROS2_LOGGING
   if (pimpl_->ros_clock) {
-    return pimpl_->ros_clock->now().nanoseconds();
+    const auto nanoseconds = pimpl_->ros_clock->now().nanoseconds();
+    if (nanoseconds < 0) {throw std::out_of_range("Clock time cannot be negative");}
+    return static_cast<std::uint64_t>(nanoseconds);
   }
   return 0;
 #else
   auto now = std::chrono::system_clock::now();
   auto duration = now.time_since_epoch();
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+  const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+  if (nanoseconds < 0) {throw std::out_of_range("Clock time cannot be negative");}
+  return static_cast<std::uint64_t>(nanoseconds);
 #endif
 }
 

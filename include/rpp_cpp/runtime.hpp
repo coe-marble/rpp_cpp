@@ -106,8 +106,8 @@ public:
   /// Activate this plugin with optional handover state; subcomponents are explicit opt-in.
   CallbackResult activate(HandoverState state = {}) const;
 
-  /// Drain guarded calls and deactivate this plugin, returning optional handover state.
-  DeactivationResult<HandoverState> deactivate(Timeout timeout = Timeout::max()) const;
+  /// Drain guarded calls and deactivate this plugin, returning the lifecycle result.
+  CallbackResult deactivate(Timeout timeout = Timeout::max()) const;
 
   /// Clean up this plugin, then subcomponents in reverse order, after active work stops.
   CallbackResult cleanup() const;
@@ -143,8 +143,8 @@ public:
     const std::string & slot_name, const std::string & name,
     HandoverState state = {}) const;
 
-  /// Drain guarded calls and deactivate a named entry, returning optional handover state.
-  DeactivationResult<HandoverState> deactivate_component(
+  /// Drain guarded calls and deactivate a named entry, returning the lifecycle result.
+  CallbackResult deactivate_component(
     const std::string & slot_name, const std::string & name,
     Timeout timeout = Timeout::max()) const;
 
@@ -156,17 +156,11 @@ public:
     const std::string & slot_name, const std::string & name,
     Timeout timeout = Timeout::max()) const;
 
-  /// Stop source, then activate target, optionally transferring compatible handover state.
-  /// Target failure leaves source stopped; dynamic permission is required.
-  CallbackResult switch_component(
-    const std::string & slot_name, const std::string & source,
-    const std::string & target, bool transfer_state = true, Timeout timeout = Timeout::max()) const;
-
-  /// Unload, rebuild, configure and optionally reactivate a dynamic entry.
+  /// Unload, rebuild and configure a dynamic entry, preserving its active status.
   /// refresh runs after unload and before construction. Failures stop the sequence.
   CallbackResult reload_component(
     const std::string & slot_name, const std::string & name,
-    bool transfer_state = false, Timeout timeout = Timeout::max(),
+    HandoverState state = {}, Timeout timeout = Timeout::max(),
     std::function<void(const std::string &)> refresh = {}) const;
 
   /// Replace a slot's admission validator for future registrations; do not reenter lifecycle.

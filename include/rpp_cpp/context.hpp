@@ -136,7 +136,11 @@ public:
     std::optional<std::string_view> expected_instance_id = {}) const;
 
   /// Execute callback(T&) through a named active subcomponent's slot guard.
-  /// Callback return values must be owned values or void; exceptions propagate.
+  /// Returns {true, optional(value)}; void callbacks return std::monostate.
+  /// Returns {false, nullopt} for unavailable/stale/wrong-type components,
+  /// unknown slots, released contexts, or callback exceptions. Never throws.
+  /// Callback results must be owned values or void; side effects are not rolled back.
+  /// An empty name selects the current component of an exclusive slot.
   /// An expected UUID rejects replacement under the same registration name.
   /// Keep lifecycle operations on the owner thread outside affected guards.
   /// Concurrent mode drains guarded calls before deactivation/unload;
@@ -144,8 +148,8 @@ public:
   template<typename T, typename Callback>
   auto with_active_component(
     const std::string & slot_name, const std::string & name, Callback && callback,
-    std::optional<std::string_view> expected_instance_id = {}) const
-  -> std::invoke_result_t<Callback, T &>;
+    std::optional<std::string_view> expected_instance_id = {}) const noexcept
+  -> ActiveCallResult<std::invoke_result_t<Callback, T &>>;
 };
 
 /**
@@ -201,10 +205,10 @@ public:
   /// Return the actual transition result; the manager validates its current state.
   CallbackResult activate(HandoverState state = {}) const;
 
-  /// Synchronously deactivate this subcomponent and return its optional handover state.
+  /// Synchronously deactivate this subcomponent and return its lifecycle result.
   /// Concurrent mode drains slot-guarded calls first; timeout does not bound plugin callbacks.
   /// Direct plugin pointers remain callable under the plugin's own state rules.
-  DeactivationResult<HandoverState> deactivate(Timeout timeout = Timeout::max()) const;
+  CallbackResult deactivate(Timeout timeout = Timeout::max()) const;
 
   /// Borrow the subcomponent instance UUID; copy it before retaining it beyond runtime release.
   const std::string & get_instance_id() const {return context_->get_instance_id();}
@@ -260,12 +264,23 @@ T ComponentContext::get_parameter(const std::string & name) const
 template<typename T, typename Callback>
 auto ComponentContext::with_active_component(
   const std::string & slot_name, const std::string & name, Callback && callback,
-  std::optional<std::string_view> expected_instance_id) const -> std::invoke_result_t<Callback, T &>
+  std::optional<std::string_view> expected_instance_id) const noexcept
+-> ActiveCallResult<std::invoke_result_t<Callback, T &>>
 {
-  return visit([&](auto & component) -> std::invoke_result_t<Callback, T &> {
-             return component.subcomponent_slot(slot_name).template with_active<T>(
-      name, std::forward<Callback>(callback), expected_instance_id);
-  });
+  using Result = ActiveCallResult<std::invoke_result_t<Callback, T &>>;
+  try {
+    if (!component_) {return {};}
+    return std::visit([&](auto component) -> Result {
+               auto & data = component.get();
+               if (data.resources_released_) {return {};}
+               auto slot = data.subcomponent_slots_.find(slot_name);
+               if (slot == data.subcomponent_slots_.end()) {return {};}
+               return slot->second->template with_active<T>(
+          name, std::forward<Callback>(callback), expected_instance_id);
+      }, *component_);
+  } catch (...) {
+    return {};
+  }
 }
 
 template<typename T>

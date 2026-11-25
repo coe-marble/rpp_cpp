@@ -54,7 +54,6 @@ CAPNP_DECLARE_SCHEMA(d2f1b4a16ed6cfea);
 CAPNP_DECLARE_SCHEMA(bc71ab9a6fde48a0);
 CAPNP_DECLARE_SCHEMA(a52ea179cbcf660a);
 CAPNP_DECLARE_SCHEMA(d1ddb287743e001f);
-CAPNP_DECLARE_SCHEMA(d78090d15624198b);
 CAPNP_DECLARE_SCHEMA(832ec98592fad1b4);
 CAPNP_DECLARE_SCHEMA(b269108792c94310);
 
@@ -478,7 +477,7 @@ struct PluginRuntime::ReloadComponentParams {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(a001e491d0edccef, 1, 1)
+    CAPNP_DECLARE_STRUCT_HEADER(a001e491d0edccef, 0, 2)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -508,7 +507,7 @@ struct PluginRuntime::SwitchComponentsParams {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(c16b9d923c7af9df, 1, 3)
+    CAPNP_DECLARE_STRUCT_HEADER(c16b9d923c7af9df, 0, 3)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -569,21 +568,6 @@ struct HandoverState {
 
   struct _capnpPrivate {
     CAPNP_DECLARE_STRUCT_HEADER(d1ddb287743e001f, 1, 1)
-    #if !CAPNP_LITE
-    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
-    #endif  // !CAPNP_LITE
-  };
-};
-
-struct DeactivationResult {
-  DeactivationResult() = delete;
-
-  class Reader;
-  class Builder;
-  class Pipeline;
-
-  struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(d78090d15624198b, 0, 2)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -1520,8 +1504,8 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -1551,12 +1535,13 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -1683,8 +1668,8 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -1714,12 +1699,13 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -1998,11 +1984,11 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
-  inline bool hasState() const;
-  inline  ::rpp::runtime::HandoverState::Reader getState() const;
+  inline bool hasHandoverStates() const;
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader getHandoverStates() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2032,19 +2018,20 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
-  inline bool hasState();
-  inline  ::rpp::runtime::HandoverState::Builder getState();
-  inline void setState( ::rpp::runtime::HandoverState::Reader value);
-  inline  ::rpp::runtime::HandoverState::Builder initState();
-  inline void adoptState(::capnp::Orphan< ::rpp::runtime::HandoverState>&& value);
-  inline ::capnp::Orphan< ::rpp::runtime::HandoverState> disownState();
+  inline bool hasHandoverStates();
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder getHandoverStates();
+  inline void setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value);
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder initHandoverStates(unsigned int size);
+  inline void adoptHandoverStates(::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> disownHandoverStates();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2064,7 +2051,6 @@ public:
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
       : _typeless(kj::mv(typeless)) {}
 
-  inline  ::rpp::runtime::HandoverState::Pipeline getState();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -2172,8 +2158,8 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2203,12 +2189,13 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2254,7 +2241,7 @@ public:
 #endif  // !CAPNP_LITE
 
   inline bool hasResult() const;
-  inline  ::rpp::runtime::DeactivationResult::Reader getResult() const;
+  inline  ::rpp::runtime::LifecycleResult::Reader getResult() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2285,11 +2272,11 @@ public:
 #endif  // !CAPNP_LITE
 
   inline bool hasResult();
-  inline  ::rpp::runtime::DeactivationResult::Builder getResult();
-  inline void setResult( ::rpp::runtime::DeactivationResult::Reader value);
-  inline  ::rpp::runtime::DeactivationResult::Builder initResult();
-  inline void adoptResult(::capnp::Orphan< ::rpp::runtime::DeactivationResult>&& value);
-  inline ::capnp::Orphan< ::rpp::runtime::DeactivationResult> disownResult();
+  inline  ::rpp::runtime::LifecycleResult::Builder getResult();
+  inline void setResult( ::rpp::runtime::LifecycleResult::Reader value);
+  inline  ::rpp::runtime::LifecycleResult::Builder initResult();
+  inline void adoptResult(::capnp::Orphan< ::rpp::runtime::LifecycleResult>&& value);
+  inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> disownResult();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2309,7 +2296,7 @@ public:
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
       : _typeless(kj::mv(typeless)) {}
 
-  inline  ::rpp::runtime::DeactivationResult::Pipeline getResult();
+  inline  ::rpp::runtime::LifecycleResult::Pipeline getResult();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -2499,8 +2486,8 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2530,12 +2517,13 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2662,10 +2650,11 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId() const;
-  inline  ::capnp::Text::Reader getInstanceId() const;
+  inline bool hasInstanceIds() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getInstanceIds() const;
 
-  inline bool getTransferState() const;
+  inline bool hasHandoverStates() const;
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader getHandoverStates() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2695,15 +2684,20 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasInstanceId();
-  inline  ::capnp::Text::Builder getInstanceId();
-  inline void setInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initInstanceId(unsigned int size);
-  inline void adoptInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownInstanceId();
+  inline bool hasInstanceIds();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getInstanceIds();
+  inline void setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initInstanceIds(unsigned int size);
+  inline void adoptInstanceIds(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownInstanceIds();
 
-  inline bool getTransferState();
-  inline void setTransferState(bool value);
+  inline bool hasHandoverStates();
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder getHandoverStates();
+  inline void setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value);
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder initHandoverStates(unsigned int size);
+  inline void adoptHandoverStates(::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> disownHandoverStates();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2830,16 +2824,14 @@ public:
   }
 #endif  // !CAPNP_LITE
 
-  inline bool hasConnectionName() const;
-  inline  ::capnp::Text::Reader getConnectionName() const;
+  inline bool hasDeactivate() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getDeactivate() const;
 
-  inline bool hasSourceInstanceId() const;
-  inline  ::capnp::Text::Reader getSourceInstanceId() const;
+  inline bool hasActivate() const;
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader getActivate() const;
 
-  inline bool hasTargetInstanceId() const;
-  inline  ::capnp::Text::Reader getTargetInstanceId() const;
-
-  inline bool getTransferState() const;
+  inline bool hasHandoverStates() const;
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader getHandoverStates() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2869,29 +2861,28 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
-  inline bool hasConnectionName();
-  inline  ::capnp::Text::Builder getConnectionName();
-  inline void setConnectionName( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initConnectionName(unsigned int size);
-  inline void adoptConnectionName(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownConnectionName();
+  inline bool hasDeactivate();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getDeactivate();
+  inline void setDeactivate( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setDeactivate(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initDeactivate(unsigned int size);
+  inline void adoptDeactivate(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownDeactivate();
 
-  inline bool hasSourceInstanceId();
-  inline  ::capnp::Text::Builder getSourceInstanceId();
-  inline void setSourceInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initSourceInstanceId(unsigned int size);
-  inline void adoptSourceInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownSourceInstanceId();
+  inline bool hasActivate();
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder getActivate();
+  inline void setActivate( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setActivate(::kj::ArrayPtr<const  ::capnp::Text::Reader> value);
+  inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder initActivate(unsigned int size);
+  inline void adoptActivate(::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> disownActivate();
 
-  inline bool hasTargetInstanceId();
-  inline  ::capnp::Text::Builder getTargetInstanceId();
-  inline void setTargetInstanceId( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initTargetInstanceId(unsigned int size);
-  inline void adoptTargetInstanceId(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownTargetInstanceId();
-
-  inline bool getTransferState();
-  inline void setTransferState(bool value);
+  inline bool hasHandoverStates();
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder getHandoverStates();
+  inline void setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value);
+  inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder initHandoverStates(unsigned int size);
+  inline void adoptHandoverStates(::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> disownHandoverStates();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -3268,99 +3259,6 @@ public:
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
       : _typeless(kj::mv(typeless)) {}
 
-private:
-  ::capnp::AnyPointer::Pipeline _typeless;
-  friend class ::capnp::PipelineHook;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-};
-#endif  // !CAPNP_LITE
-
-class DeactivationResult::Reader {
-public:
-  typedef DeactivationResult Reads;
-
-  Reader() = default;
-  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
-
-  inline ::capnp::MessageSize totalSize() const {
-    return _reader.totalSize().asPublic();
-  }
-
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const {
-    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
-  }
-#endif  // !CAPNP_LITE
-
-  inline bool hasResult() const;
-  inline  ::rpp::runtime::LifecycleResult::Reader getResult() const;
-
-  inline bool hasState() const;
-  inline  ::rpp::runtime::HandoverState::Reader getState() const;
-
-private:
-  ::capnp::_::StructReader _reader;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::List;
-  friend class ::capnp::MessageBuilder;
-  friend class ::capnp::Orphanage;
-};
-
-class DeactivationResult::Builder {
-public:
-  typedef DeactivationResult Builds;
-
-  Builder() = delete;  // Deleted to discourage incorrect usage.
-                       // You can explicitly initialize to nullptr instead.
-  inline Builder(decltype(nullptr)) {}
-  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
-  inline operator Reader() const { return Reader(_builder.asReader()); }
-  inline Reader asReader() const { return *this; }
-
-  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const { return asReader().toString(); }
-#endif  // !CAPNP_LITE
-
-  inline bool hasResult();
-  inline  ::rpp::runtime::LifecycleResult::Builder getResult();
-  inline void setResult( ::rpp::runtime::LifecycleResult::Reader value);
-  inline  ::rpp::runtime::LifecycleResult::Builder initResult();
-  inline void adoptResult(::capnp::Orphan< ::rpp::runtime::LifecycleResult>&& value);
-  inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> disownResult();
-
-  inline bool hasState();
-  inline  ::rpp::runtime::HandoverState::Builder getState();
-  inline void setState( ::rpp::runtime::HandoverState::Reader value);
-  inline  ::rpp::runtime::HandoverState::Builder initState();
-  inline void adoptState(::capnp::Orphan< ::rpp::runtime::HandoverState>&& value);
-  inline ::capnp::Orphan< ::rpp::runtime::HandoverState> disownState();
-
-private:
-  ::capnp::_::StructBuilder _builder;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  friend class ::capnp::Orphanage;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-};
-
-#if !CAPNP_LITE
-class DeactivationResult::Pipeline {
-public:
-  typedef DeactivationResult Pipelines;
-
-  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
-  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
-      : _typeless(kj::mv(typeless)) {}
-
-  inline  ::rpp::runtime::LifecycleResult::Pipeline getResult();
-  inline  ::rpp::runtime::HandoverState::Pipeline getState();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -3748,37 +3646,41 @@ inline void PluginRuntime::GetProtocolVersionResults::Builder::setVersion( ::uin
       ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
 }
 
-inline bool PluginRuntime::ConfigureComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::ConfigureComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::ConfigureComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::ConfigureComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::ConfigureComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::ConfigureComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::ConfigureComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ConfigureComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::ConfigureComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::ConfigureComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::ConfigureComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::ConfigureComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ConfigureComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::ConfigureComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::ConfigureComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::ConfigureComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::ConfigureComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
@@ -3821,37 +3723,41 @@ inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::Configur
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::CleanupComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::CleanupComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::CleanupComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::CleanupComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::CleanupComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::CleanupComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::CleanupComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::CleanupComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::CleanupComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::CleanupComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::CleanupComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::CleanupComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::CleanupComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::CleanupComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::CleanupComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::CleanupComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::CleanupComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
@@ -3928,76 +3834,75 @@ inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::ComponentInfo,  ::capnp::
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::ActivateComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::ActivateComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::ActivateComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::ActivateComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::ActivateComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::ActivateComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::ActivateComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ActivateComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::ActivateComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::ActivateComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::ActivateComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::ActivateComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ActivateComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::ActivateComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::ActivateComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::ActivateComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::ActivateComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::ActivateComponentParams::Reader::hasState() const {
+inline bool PluginRuntime::ActivateComponentParams::Reader::hasHandoverStates() const {
   return !_reader.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::ActivateComponentParams::Builder::hasState() {
+inline bool PluginRuntime::ActivateComponentParams::Builder::hasHandoverStates() {
   return !_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-inline  ::rpp::runtime::HandoverState::Reader PluginRuntime::ActivateComponentParams::Reader::getState() const {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::get(_reader.getPointerField(
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader PluginRuntime::ActivateComponentParams::Reader::getHandoverStates() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_reader.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
-inline  ::rpp::runtime::HandoverState::Builder PluginRuntime::ActivateComponentParams::Builder::getState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::get(_builder.getPointerField(
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::ActivateComponentParams::Builder::getHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
-#if !CAPNP_LITE
-inline  ::rpp::runtime::HandoverState::Pipeline PluginRuntime::ActivateComponentParams::Pipeline::getState() {
-  return  ::rpp::runtime::HandoverState::Pipeline(_typeless.getPointerField(1));
-}
-#endif  // !CAPNP_LITE
-inline void PluginRuntime::ActivateComponentParams::Builder::setState( ::rpp::runtime::HandoverState::Reader value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::set(_builder.getPointerField(
+inline void PluginRuntime::ActivateComponentParams::Builder::setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::set(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS), value);
 }
-inline  ::rpp::runtime::HandoverState::Builder PluginRuntime::ActivateComponentParams::Builder::initState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::init(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::ActivateComponentParams::Builder::initHandoverStates(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::init(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::ActivateComponentParams::Builder::adoptState(
-    ::capnp::Orphan< ::rpp::runtime::HandoverState>&& value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::adopt(_builder.getPointerField(
+inline void PluginRuntime::ActivateComponentParams::Builder::adoptHandoverStates(
+    ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::adopt(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::rpp::runtime::HandoverState> PluginRuntime::ActivateComponentParams::Builder::disownState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> PluginRuntime::ActivateComponentParams::Builder::disownHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::disown(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
@@ -4040,37 +3945,41 @@ inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::Activate
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::DeactivateComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::DeactivateComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::DeactivateComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::DeactivateComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::DeactivateComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::DeactivateComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::DeactivateComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::DeactivateComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::DeactivateComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::DeactivateComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::DeactivateComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::DeactivateComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::DeactivateComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::DeactivateComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::DeactivateComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::DeactivateComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::DeactivateComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
@@ -4082,34 +3991,34 @@ inline bool PluginRuntime::DeactivateComponentResults::Builder::hasResult() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::rpp::runtime::DeactivationResult::Reader PluginRuntime::DeactivateComponentResults::Reader::getResult() const {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::get(_reader.getPointerField(
+inline  ::rpp::runtime::LifecycleResult::Reader PluginRuntime::DeactivateComponentResults::Reader::getResult() const {
+  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::rpp::runtime::DeactivationResult::Builder PluginRuntime::DeactivateComponentResults::Builder::getResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::get(_builder.getPointerField(
+inline  ::rpp::runtime::LifecycleResult::Builder PluginRuntime::DeactivateComponentResults::Builder::getResult() {
+  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 #if !CAPNP_LITE
-inline  ::rpp::runtime::DeactivationResult::Pipeline PluginRuntime::DeactivateComponentResults::Pipeline::getResult() {
-  return  ::rpp::runtime::DeactivationResult::Pipeline(_typeless.getPointerField(0));
+inline  ::rpp::runtime::LifecycleResult::Pipeline PluginRuntime::DeactivateComponentResults::Pipeline::getResult() {
+  return  ::rpp::runtime::LifecycleResult::Pipeline(_typeless.getPointerField(0));
 }
 #endif  // !CAPNP_LITE
-inline void PluginRuntime::DeactivateComponentResults::Builder::setResult( ::rpp::runtime::DeactivationResult::Reader value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::set(_builder.getPointerField(
+inline void PluginRuntime::DeactivateComponentResults::Builder::setResult( ::rpp::runtime::LifecycleResult::Reader value) {
+  ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::rpp::runtime::DeactivationResult::Builder PluginRuntime::DeactivateComponentResults::Builder::initResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::init(_builder.getPointerField(
+inline  ::rpp::runtime::LifecycleResult::Builder PluginRuntime::DeactivateComponentResults::Builder::initResult() {
+  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 inline void PluginRuntime::DeactivateComponentResults::Builder::adoptResult(
-    ::capnp::Orphan< ::rpp::runtime::DeactivationResult>&& value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::adopt(_builder.getPointerField(
+    ::capnp::Orphan< ::rpp::runtime::LifecycleResult>&& value) {
+  ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::rpp::runtime::DeactivationResult> PluginRuntime::DeactivateComponentResults::Builder::disownResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::DeactivationResult>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::DeactivateComponentResults::Builder::disownResult() {
+  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
@@ -4191,37 +4100,41 @@ inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::LoadComp
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::UnloadComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::UnloadComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::UnloadComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::UnloadComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::UnloadComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::UnloadComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::UnloadComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::UnloadComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::UnloadComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::UnloadComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::UnloadComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::UnloadComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::UnloadComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::UnloadComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::UnloadComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::UnloadComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::UnloadComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
@@ -4264,52 +4177,76 @@ inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::UnloadCo
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::ReloadComponentParams::Reader::hasInstanceId() const {
+inline bool PluginRuntime::ReloadComponentParams::Reader::hasInstanceIds() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::ReloadComponentParams::Builder::hasInstanceId() {
+inline bool PluginRuntime::ReloadComponentParams::Builder::hasInstanceIds() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::ReloadComponentParams::Reader::getInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::ReloadComponentParams::Reader::getInstanceIds() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::ReloadComponentParams::Builder::getInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ReloadComponentParams::Builder::getInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::ReloadComponentParams::Builder::setInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::ReloadComponentParams::Builder::setInstanceIds( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::ReloadComponentParams::Builder::initInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::ReloadComponentParams::Builder::setInstanceIds(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::ReloadComponentParams::Builder::initInstanceIds(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::ReloadComponentParams::Builder::adoptInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::ReloadComponentParams::Builder::adoptInstanceIds(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::ReloadComponentParams::Builder::disownInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::ReloadComponentParams::Builder::disownInstanceIds() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::ReloadComponentParams::Reader::getTransferState() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+inline bool PluginRuntime::ReloadComponentParams::Reader::hasHandoverStates() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-
-inline bool PluginRuntime::ReloadComponentParams::Builder::getTransferState() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+inline bool PluginRuntime::ReloadComponentParams::Builder::hasHandoverStates() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-inline void PluginRuntime::ReloadComponentParams::Builder::setTransferState(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader PluginRuntime::ReloadComponentParams::Reader::getHandoverStates() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::ReloadComponentParams::Builder::getHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline void PluginRuntime::ReloadComponentParams::Builder::setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::ReloadComponentParams::Builder::initHandoverStates(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::init(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
+}
+inline void PluginRuntime::ReloadComponentParams::Builder::adoptHandoverStates(
+    ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> PluginRuntime::ReloadComponentParams::Builder::disownHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::disown(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
 inline bool PluginRuntime::ReloadComponentResults::Reader::hasResult() const {
@@ -4351,120 +4288,114 @@ inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> PluginRuntime::ReloadCo
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::SwitchComponentsParams::Reader::hasConnectionName() const {
+inline bool PluginRuntime::SwitchComponentsParams::Reader::hasDeactivate() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::SwitchComponentsParams::Builder::hasConnectionName() {
+inline bool PluginRuntime::SwitchComponentsParams::Builder::hasDeactivate() {
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::SwitchComponentsParams::Reader::getConnectionName() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::SwitchComponentsParams::Reader::getDeactivate() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::getConnectionName() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::SwitchComponentsParams::Builder::getDeactivate() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::setConnectionName( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::setDeactivate( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::initConnectionName(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::setDeactivate(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::SwitchComponentsParams::Builder::initDeactivate(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::adoptConnectionName(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::adoptDeactivate(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::SwitchComponentsParams::Builder::disownConnectionName() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::SwitchComponentsParams::Builder::disownDeactivate() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::SwitchComponentsParams::Reader::hasSourceInstanceId() const {
+inline bool PluginRuntime::SwitchComponentsParams::Reader::hasActivate() const {
   return !_reader.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::SwitchComponentsParams::Builder::hasSourceInstanceId() {
+inline bool PluginRuntime::SwitchComponentsParams::Builder::hasActivate() {
   return !_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::SwitchComponentsParams::Reader::getSourceInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader PluginRuntime::SwitchComponentsParams::Reader::getActivate() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::getSourceInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::SwitchComponentsParams::Builder::getActivate() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::setSourceInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::setActivate( ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::initSourceInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::setActivate(::kj::ArrayPtr<const  ::capnp::Text::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>::Builder PluginRuntime::SwitchComponentsParams::Builder::initActivate(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::adoptSourceInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::adoptActivate(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::SwitchComponentsParams::Builder::disownSourceInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>> PluginRuntime::SwitchComponentsParams::Builder::disownActivate() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Text,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
-inline bool PluginRuntime::SwitchComponentsParams::Reader::hasTargetInstanceId() const {
+inline bool PluginRuntime::SwitchComponentsParams::Reader::hasHandoverStates() const {
   return !_reader.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
 }
-inline bool PluginRuntime::SwitchComponentsParams::Builder::hasTargetInstanceId() {
+inline bool PluginRuntime::SwitchComponentsParams::Builder::hasHandoverStates() {
   return !_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
 }
-inline  ::capnp::Text::Reader PluginRuntime::SwitchComponentsParams::Reader::getTargetInstanceId() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader PluginRuntime::SwitchComponentsParams::Reader::getHandoverStates() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_reader.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS));
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::getTargetInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::SwitchComponentsParams::Builder::getHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::get(_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS));
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::setTargetInstanceId( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::setHandoverStates( ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::set(_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS), value);
 }
-inline  ::capnp::Text::Builder PluginRuntime::SwitchComponentsParams::Builder::initTargetInstanceId(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+inline  ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>::Builder PluginRuntime::SwitchComponentsParams::Builder::initHandoverStates(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::init(_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS), size);
 }
-inline void PluginRuntime::SwitchComponentsParams::Builder::adoptTargetInstanceId(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+inline void PluginRuntime::SwitchComponentsParams::Builder::adoptHandoverStates(
+    ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::adopt(_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::capnp::Text> PluginRuntime::SwitchComponentsParams::Builder::disownTargetInstanceId() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+inline ::capnp::Orphan< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>> PluginRuntime::SwitchComponentsParams::Builder::disownHandoverStates() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::rpp::runtime::HandoverState,  ::capnp::Kind::STRUCT>>::disown(_builder.getPointerField(
       ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-
-inline bool PluginRuntime::SwitchComponentsParams::Reader::getTransferState() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-
-inline bool PluginRuntime::SwitchComponentsParams::Builder::getTransferState() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-inline void PluginRuntime::SwitchComponentsParams::Builder::setTransferState(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool PluginRuntime::SwitchComponentsResults::Reader::hasResult() const {
@@ -4705,84 +4636,6 @@ inline ::capnp::AnyPointer::Builder HandoverState::Builder::initPayload() {
       ::capnp::bounded<0>() * ::capnp::POINTERS));
   result.clear();
   return result;
-}
-
-inline bool DeactivationResult::Reader::hasResult() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline bool DeactivationResult::Builder::hasResult() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline  ::rpp::runtime::LifecycleResult::Reader DeactivationResult::Reader::getResult() const {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::get(_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline  ::rpp::runtime::LifecycleResult::Builder DeactivationResult::Builder::getResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::get(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-#if !CAPNP_LITE
-inline  ::rpp::runtime::LifecycleResult::Pipeline DeactivationResult::Pipeline::getResult() {
-  return  ::rpp::runtime::LifecycleResult::Pipeline(_typeless.getPointerField(0));
-}
-#endif  // !CAPNP_LITE
-inline void DeactivationResult::Builder::setResult( ::rpp::runtime::LifecycleResult::Reader value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::set(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
-}
-inline  ::rpp::runtime::LifecycleResult::Builder DeactivationResult::Builder::initResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::init(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline void DeactivationResult::Builder::adoptResult(
-    ::capnp::Orphan< ::rpp::runtime::LifecycleResult>&& value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::adopt(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::rpp::runtime::LifecycleResult> DeactivationResult::Builder::disownResult() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::LifecycleResult>::disown(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-
-inline bool DeactivationResult::Reader::hasState() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline bool DeactivationResult::Builder::hasState() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline  ::rpp::runtime::HandoverState::Reader DeactivationResult::Reader::getState() const {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::get(_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline  ::rpp::runtime::HandoverState::Builder DeactivationResult::Builder::getState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::get(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-#if !CAPNP_LITE
-inline  ::rpp::runtime::HandoverState::Pipeline DeactivationResult::Pipeline::getState() {
-  return  ::rpp::runtime::HandoverState::Pipeline(_typeless.getPointerField(1));
-}
-#endif  // !CAPNP_LITE
-inline void DeactivationResult::Builder::setState( ::rpp::runtime::HandoverState::Reader value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::set(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
-}
-inline  ::rpp::runtime::HandoverState::Builder DeactivationResult::Builder::initState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::init(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline void DeactivationResult::Builder::adoptState(
-    ::capnp::Orphan< ::rpp::runtime::HandoverState>&& value) {
-  ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::adopt(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::rpp::runtime::HandoverState> DeactivationResult::Builder::disownState() {
-  return ::capnp::_::PointerHelpers< ::rpp::runtime::HandoverState>::disown(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
 inline bool ComponentInfo::Reader::hasName() const {

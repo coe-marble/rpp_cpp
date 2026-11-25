@@ -106,13 +106,12 @@ public:
     return reject ==
            "activate" ? rpp::CallbackResult::failure("activation rejected") : rpp::CallbackResult{};
   }
-  rpp::DeactivationResult<Estimate> on_deactivate() override
+  rpp::CallbackResult on_deactivate() override
   {
     if (before_deactivate) {before_deactivate();}
     events.push_back("deactivate");
-    return {reject ==
-      "deactivate" ? rpp::CallbackResult::failure("still active") : rpp::CallbackResult{},
-      estimate};
+    return reject ==
+           "deactivate" ? rpp::CallbackResult::failure("still active") : rpp::CallbackResult{};
   }
   rpp::CallbackResult on_cleanup() override {events.push_back("cleanup"); return {};}
 };
@@ -192,11 +191,11 @@ public:
     return {};
   }
 
-  rpp::DeactivationResult<ControllerState> on_deactivate() override
+  rpp::CallbackResult on_deactivate() override
   {
     log.add("deactivate " + name);
-    return {reject_deactivation ? rpp::CallbackResult::failure("deactivation rejected") :
-      rpp::CallbackResult{}, state};
+    return reject_deactivation ? rpp::CallbackResult::failure("deactivation rejected") :
+           rpp::CallbackResult{};
   }
 
   rpp::CallbackResult on_cleanup() override
@@ -220,13 +219,11 @@ public:
     return ScenarioController::on_activate(previous);
   }
 
-  rpp::DeactivationResult<ControllerState> on_deactivate() override
+  rpp::CallbackResult on_deactivate() override
   {
     auto result = ScenarioController::on_deactivate();
-    if (!result.result.success) {return result;}
-    auto children = context->deactivate_subcomponents();
-    if (!children.success) {return {children, std::nullopt};}
-    return result;
+    if (!result.success) {return result;}
+    return context->deactivate_subcomponents();
   }
 };
 
@@ -241,7 +238,7 @@ public:
     if (state) {estimate = *state;}
     return {};
   }
-  rpp::DeactivationResult<SnapshotEstimate> on_deactivate() override {return {{}, estimate};}
+  rpp::CallbackResult on_deactivate() override {return {};}
 };
 
 class AlternativeLocalizer : public SnapshotLocalizer {};
@@ -259,8 +256,8 @@ public:
 
 class FailedDeactivationLocalizer : public SnapshotLocalizer
 {
-  rpp::DeactivationResult<SnapshotEstimate> on_deactivate() override
-  {return {rpp::CallbackResult::failure("still updating"), SnapshotEstimate{{1.0}}};}
+  rpp::CallbackResult on_deactivate() override
+  {return rpp::CallbackResult::failure("still updating");}
 };
 
 class Stateless : public rpp::LifecyclePlugin<void>
@@ -276,7 +273,7 @@ class FailingLifecycleLocalizer : public SnapshotLocalizer
 {
   rpp::CallbackResult on_activate(const std::optional<SnapshotEstimate> &) override
   {return rpp::CallbackResult::failure("state rejected");}
-  rpp::DeactivationResult<SnapshotEstimate> on_deactivate() override
+  rpp::CallbackResult on_deactivate() override
   {throw std::runtime_error("still updating");}
 };
 
@@ -289,6 +286,6 @@ public:
     estimate = state;
     return {};
   }
-  rpp::DeactivationResult<SnapshotEstimate> on_deactivate() override {return {{}, estimate};}
+  rpp::CallbackResult on_deactivate() override {return {};}
 };
 }  // namespace rpp::testing

@@ -34,6 +34,55 @@
 #include <thread>
 #include <atomic>
 
+TEST(ListDefinitions, EmptyAndPopulatedListsReportTheirSize)
+{
+  rpp::List<double> values;
+  rpp::List<bool> flags;
+  EXPECT_TRUE(values.empty());
+  EXPECT_TRUE(flags.empty());
+  EXPECT_EQ(values.size(), 0u);
+  EXPECT_EQ(flags.size(), 0u);
+
+  values.resize(2);
+  flags.resize(3);
+  EXPECT_EQ(values.size(), 2u);
+  EXPECT_EQ(flags.size(), 3u);
+}
+
+TEST(ListDefinitions, ElementAssignmentCopiesValuesWithoutRebindingTheProxy)
+{
+  rpp::List<double> values;
+  values.resize(2);
+  values[0] = 3.5;
+  values[1] = values[0];
+  const auto & result = values;
+  EXPECT_DOUBLE_EQ(result[1], 3.5);
+
+  auto source = values[0];
+  auto destination = values[1];
+  destination = source;
+  destination = 7.0;
+  EXPECT_DOUBLE_EQ(result[0], 3.5);
+  EXPECT_DOUBLE_EQ(result[1], 7.0);
+
+  rpp::List<bool> flags;
+  flags.resize(2);
+  flags[0] = true;
+  flags[1] = flags[0];
+  const auto & flag_result = flags;
+  EXPECT_TRUE(flag_result[1]);
+}
+
+TEST(ListDefinitions, TextElementsSupportAssignmentFromAnotherElement)
+{
+  capnp::MallocMessageBuilder message;
+  rpp::List<std::string> values(message.initRoot<capnp::List<capnp::Text>>(2), message);
+  values[0] = std::string("buffered state");
+  values[1] = values[0];
+  const auto & result = values;
+  EXPECT_EQ(result[1], "buffered state");
+}
+
 
 TEST(DataModelTest, ComponentRecordParsesMultipleSubcomponentsInOneSlot)
 {

@@ -1,5 +1,7 @@
 #pragma once
+#include <cmath>
 #include <cstdint>
+#include <limits>
 
 #include <memory>
 #include <stdexcept>
@@ -30,7 +32,8 @@ class RppClock
 public:
   RppClock() = default;
   virtual double now_seconds() const = 0;
-  virtual uint64_t now_nanoseconds() const = 0;
+  // Canonical clock timestamps are unsigned 64-bit nanoseconds.
+  virtual std::uint64_t now_nanoseconds() const = 0;
 };
 
 class RppClockRealTime : public RppClock {
@@ -47,7 +50,7 @@ public:
   virtual double now_seconds() const;
 
     // Returns current timestamp in nanoseconds as an integer
-  virtual uint64_t now_nanoseconds() const;
+  virtual std::uint64_t now_nanoseconds() const;
 
 private:
   struct Impl;
@@ -59,10 +62,11 @@ class RppClockMock : public RppClock {
 
 public:
   RppClockMock(double initial_time)
-  : current_time_(initial_time) {}
+  {set_time(initial_time);}
 
   void set_time(double new_time)
   {
+    (void)to_nanoseconds(new_time);
     current_time_ = new_time;
   }
 
@@ -73,16 +77,28 @@ public:
 
   double elapse(double dt)
   {
-    current_time_ += dt;
+    set_time(current_time_ + dt);
     return current_time_;
   }
 
-  uint64_t now_nanoseconds() const override
+  std::uint64_t now_nanoseconds() const override
   {
-    return static_cast<uint64_t>(current_time_ * 1e9);
+    return to_nanoseconds(current_time_);
   }
 
 private:
+  static std::uint64_t to_nanoseconds(double seconds)
+  {
+    const double nanoseconds = seconds * 1e9;
+    // The double upper bound rounds to 2^64, which must be excluded before conversion.
+    if (!std::isfinite(nanoseconds) || nanoseconds < 0.0 ||
+      nanoseconds >= static_cast<double>(std::numeric_limits<std::uint64_t>::max()))
+    {
+      throw std::out_of_range("Clock time must fit unsigned 64-bit nanoseconds");
+    }
+    return static_cast<std::uint64_t>(nanoseconds);
+  }
+
   double current_time_;
 };
 

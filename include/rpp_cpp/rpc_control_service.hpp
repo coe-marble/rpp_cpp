@@ -9,12 +9,14 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include "plugin_runtime.capnp.h"
 #include "adapter_bases.hpp"
 #include "logger.hpp"
 #include "component_status.hpp"
+#include "handover_state.hpp"
 
 namespace rpp
 {
@@ -36,15 +38,14 @@ public:
     std::function<CallbackResult(const std::string &)> configure;
     std::function<CallbackResult(const std::string &)> cleanup;
     std::function<CallbackResult(const std::string &, HandoverState)> activate;
-    std::function<DeactivationResult<HandoverState>(const std::string &)> deactivate;
+    std::function<CallbackResult(const std::string &)> deactivate;
     std::function<CallbackResult(const std::string &)> unload;
-    std::function<CallbackResult(const std::string &, bool)> reload;
-    std::function<CallbackResult(
-        const std::string &, const std::string &, bool)> switch_components;
+    std::function<CallbackResult(const std::string &, HandoverState)> reload;
     std::function<CallbackResult()> close;
     // Rebind the generated adapter to the selected runtime before handing out
     // its typed capability.
     std::function<CallbackResult()> refresh_adapter;
+    bool allows_dynamic_operations = false;
   };
 
 private:
@@ -66,15 +67,117 @@ private:
     return found == slots_.end() ? nullptr : &found->second;
   }
 
-  SlotControl * slot_for_instance(const std::string & instance_id)
+  struct Instance
   {
-    for (auto & [connection_name, control] : slots_) {
-      (void)connection_name;
+    std::string id;
+    SlotControl * control = nullptr;
+  };
+
+  struct Activation
+  {
+    Instance instance;
+    HandoverState state;
+  };
+
+  CallbackResult resolve_instance(
+    std::string id, std::set<std::string> & seen, Instance & output,
+    std::optional<LifecycleState> expected)
+  {
+    if (id.empty()) {return CallbackResult::failure("Component instance ID is required");}
+    if (!seen.insert(id).second) {
+      return CallbackResult::failure("Repeated component instance: " + id);
+    }
+    for (auto & item : slots_) {
+      auto & control = item.second;
       for (const auto & component : control.list()) {
-        if (component.instance_id == instance_id) {return &control;}
+        if (component.instance_id != id) {continue;}
+        if (expected && (component.transition || component.state != *expected)) {
+          return CallbackResult::failure(
+            "Instance '" + id + "' must be " + state_name(*expected));
+        }
+        output = {std::move(id), &control};
+        return {};
       }
     }
-    return nullptr;
+    return CallbackResult::failure("Unknown hosted component instance: " + id);
+  }
+
+  CallbackResult prepare_instances(
+    capnp::List<capnp::Text>::Reader ids, std::set<std::string> & seen,
+    std::vector<Instance> & instances,
+    std::optional<LifecycleState> expected = {})
+  {
+    instances.reserve(ids.size());
+    for (auto id : ids) {
+      Instance instance;
+      auto result = resolve_instance(id.cStr(), seen, instance, expected);
+      if (!result.success) {return result;}
+      instances.push_back(std::move(instance));
+    }
+    return {};
+  }
+
+  CallbackResult prepare_activations(
+    capnp::List<capnp::Text>::Reader ids,
+    capnp::List<runtime::HandoverState>::Reader handover_states, std::set<std::string> & seen,
+    std::vector<Activation> & activations,
+    std::optional<LifecycleState> expected = {})
+  {
+    if (handover_states.size() != 0 && handover_states.size() != ids.size()) {
+      return CallbackResult::failure(
+          "Handover states must follow activation IDs, one entry per ID");
+    }
+    std::vector<Instance> instances;
+    auto resolved = prepare_instances(ids, seen, instances, expected);
+    if (!resolved.success) {return resolved;}
+    activations.reserve(instances.size());
+    for (std::size_t i = 0; i < instances.size(); ++i) {
+      auto & instance = instances[i];
+      HandoverState state;
+      if (handover_states.size() != 0) {
+        const auto wire = handover_states[i];
+        auto decoded = instance.control->adapter->decode_lifecycle_state__(
+          wire.getSchemaId(), wire.getPayload(), state);
+        if (!decoded.success) {return lifecycle_failure(instance, decoded, true);}
+      }
+      activations.push_back({std::move(instance), std::move(state)});
+    }
+    return {};
+  }
+
+  template<class Operate>
+  CallbackResult operate_on_instances(capnp::List<capnp::Text>::Reader ids, const Operate & operate)
+  {
+    return invoke([&] {
+               std::set<std::string> seen;
+               std::vector<Instance> instances;
+               auto prepared = prepare_instances(ids, seen, instances);
+               if (!prepared.success) {return prepared;}
+               for (const auto & instance : instances) {
+                 auto result = operate(*instance.control, instance.id);
+                 if (!result.success) {
+                   return lifecycle_failure(instance, result, instances.size() > 1);
+                 }
+               }
+               return CallbackResult{};
+      });
+  }
+
+  static CallbackResult lifecycle_failure(
+    const Instance & instance, const CallbackResult & result, bool report_id)
+  {
+    return report_id ?
+           CallbackResult::failure("Instance '" + instance.id + "': " + result.message) : result;
+  }
+
+  static CallbackResult activate_instances(std::vector<Activation> & activations)
+  {
+    for (auto & activation : activations) {
+      auto & instance = activation.instance;
+      auto result = instance.control->activate(instance.id, std::move(activation.state));
+      if (!result.success) {return lifecycle_failure(instance, result, activations.size() > 1);}
+    }
+    return {};
   }
 
   static const char * state_name(LifecycleState state)
@@ -119,7 +222,7 @@ public:
     }
     if (!control.adapter || !control.list || !control.load || !control.configure ||
       !control.cleanup || !control.activate || !control.deactivate || !control.unload ||
-      !control.reload || !control.switch_components || !control.close ||
+      !control.reload || !control.close ||
       !control.refresh_adapter)
     {
       throw std::invalid_argument("Hosted slot control is incomplete: " + connection_name);
@@ -144,20 +247,16 @@ public:
 
   ::kj::Promise<void> configureComponent(ConfigureComponentContext context) override
   {
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    const auto result = control ? invoke([&] {return control->configure(instance_id);}) :
-      CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    auto result = operate_on_instances(context.getParams().getInstanceIds(),
+        [](SlotControl & control, const std::string & id) {return control.configure(id);});
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
 
   ::kj::Promise<void> cleanupComponent(CleanupComponentContext context) override
   {
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    const auto result = control ? invoke([&] {return control->cleanup(instance_id);}) :
-      CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    auto result = operate_on_instances(context.getParams().getInstanceIds(),
+        [](SlotControl & control, const std::string & id) {return control.cleanup(id);});
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
@@ -193,49 +292,23 @@ public:
 
   ::kj::Promise<void> activateComponent(ActivateComponentContext context) override
   {
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    CallbackResult result = control ? CallbackResult{} :
-    CallbackResult::failure("Unknown hosted component instance: " + instance_id);
-    HandoverState state;
-    if (result.success) {
-      auto wire = context.getParams().getState();
-      result = control->adapter->decode_lifecycle_state__(wire.getSchemaId(), wire.getPayload(),
-          state);
-    }
-    if (result.success) {
-      result = invoke([&] {
-            return control->activate(instance_id, std::move(state));
-                                                                                                      });
-    }
+    auto result = invoke([&] {
+          std::set<std::string> seen;
+          std::vector<Activation> activations;
+          const auto params = context.getParams();
+          auto prepared = prepare_activations(
+          params.getInstanceIds(), params.getHandoverStates(), seen, activations);
+          return prepared.success ? activate_instances(activations) : prepared;
+      });
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
 
   ::kj::Promise<void> deactivateComponent(DeactivateComponentContext context) override
   {
-    auto output = context.getResults().initResult();
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    CallbackResult result = control ? CallbackResult{} :
-    CallbackResult::failure("Unknown hosted component instance: " + instance_id);
-    DeactivationResult<HandoverState> stopped;
-    if (result.success) {
-      try {
-        stopped = control->deactivate(instance_id); result = stopped.result;
-      } catch (const std::exception & e) {
-        result = CallbackResult::failure(e.what());
-      }
-    }
-    auto lifecycle = output.initResult(); write_result(lifecycle, result);
-    if (result.success && stopped.state) {
-      auto wire = output.initState();
-      uint64_t schema_id = 0;
-      result = control->adapter->encode_lifecycle_state__(
-        *stopped.state, schema_id, wire.initPayload());
-      wire.setSchemaId(schema_id);
-      write_result(lifecycle, result);
-    }
+    auto result = operate_on_instances(context.getParams().getInstanceIds(),
+        [](SlotControl & control, const std::string & id) {return control.deactivate(id);});
+    write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
 
@@ -254,21 +327,28 @@ public:
 
   ::kj::Promise<void> unloadComponent(UnloadComponentContext context) override
   {
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    const auto result = control ? invoke([&] {return control->unload(instance_id);}) :
-      CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    auto result = operate_on_instances(context.getParams().getInstanceIds(),
+        [](SlotControl & control, const std::string & id) {return control.unload(id);});
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
 
   ::kj::Promise<void> reloadComponent(ReloadComponentContext context) override
   {
-    const auto instance_id = std::string(context.getParams().getInstanceId().cStr());
-    auto control = slot_for_instance(instance_id);
-    const auto result = control ? invoke([&] {
-          return control->reload(instance_id, context.getParams().getTransferState());
-    }) : CallbackResult::failure("Unknown hosted component instance: " + instance_id);
+    const auto params = context.getParams();
+    auto result = invoke([&] {
+          std::set<std::string> seen;
+          std::vector<Activation> replacements;
+          auto prepared = prepare_activations(
+          params.getInstanceIds(), params.getHandoverStates(), seen, replacements);
+          if (!prepared.success) {return prepared;}
+          for (auto & replacement : replacements) {
+            auto & instance = replacement.instance;
+            auto reloaded = instance.control->reload(instance.id, std::move(replacement.state));
+            if (!reloaded.success) {return lifecycle_failure(instance, reloaded, true);}
+          }
+          return CallbackResult{};
+      });
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
@@ -276,17 +356,37 @@ public:
   ::kj::Promise<void> switchComponents(SwitchComponentsContext context) override
   {
     const auto params = context.getParams();
-    const auto connection_name = std::string(params.getConnectionName().cStr());
-    auto control = slot(connection_name);
-    const auto result = control ? invoke([&] {
-          return control->switch_components(
-        params.getSourceInstanceId().cStr(), params.getTargetInstanceId().cStr(),
-        params.getTransferState());
-    }) : CallbackResult::failure("Unknown hosted slot connection: " + connection_name);
+    auto result = invoke([&] {
+          std::set<std::string> seen;
+          std::vector<Instance> outgoing;
+          auto prepared = prepare_instances(
+          params.getDeactivate(), seen, outgoing, LifecycleState::ACTIVE);
+          if (!prepared.success) {return prepared;}
+
+          std::vector<Activation> incoming;
+          prepared = prepare_activations(
+          params.getActivate(), params.getHandoverStates(), seen, incoming,
+          LifecycleState::INACTIVE);
+          if (!prepared.success) {return prepared;}
+
+          for (const auto & instance : outgoing) {
+            auto stopped = instance.control->deactivate(instance.id);
+            if (!stopped.success) {return lifecycle_failure(instance, stopped, true);}
+          }
+          auto started = activate_instances(incoming);
+          if (!started.success) {return started;}
+          std::set<SlotControl *> refreshed;
+          for (const auto & activation : incoming) {
+            auto control = activation.instance.control;
+            if (!refreshed.insert(control).second) {continue;}
+            auto result = control->refresh_adapter();
+            if (!result.success) {return result;}
+          }
+          return CallbackResult{};
+      });
     write_result(context.getResults().initResult(), result);
     return ::kj::READY_NOW;
   }
-
 
   ::kj::Promise<void> ping(PingContext /* context*/) override
   {
@@ -388,6 +488,18 @@ private:
     return component_ids_by_connection_.emplace(connection_name, std::move(id)).first->second;
   }
 
+  template<class Request>
+  CallbackResult call_instances(Request && request, const std::vector<std::string> & instance_ids)
+  {
+    auto ids = request.initInstanceIds(instance_ids.size());
+    for (std::size_t index = 0; index < instance_ids.size(); ++index) {
+      ids.set(index, instance_ids[index]);
+    }
+    auto response = request.send().wait(io_context_.waitScope);
+    auto result = response.getResult();
+    return {result.getSuccess(), result.getMessage().cStr()};
+  }
+
 public:
   RpcControlClient(
     const RppRuntimeClientContext & context,
@@ -412,53 +524,69 @@ public:
 
   CallbackResult configure_component(const std::string & name)
   {
-    auto request = backend_.configureComponentRequest();
-    request.setInstanceId(component_id(name));
-    auto response = request.send().wait(io_context_.waitScope);
-    auto result = response.getResult();
-    return {result.getSuccess(), result.getMessage().cStr()};
+    return configure_instances({component_id(name)});
+  }
+
+  /// Batch lifecycle helpers use immutable loaded instance IDs across hosted slots.
+  CallbackResult configure_instances(const std::vector<std::string> & instance_ids)
+  {
+    return call_instances(backend_.configureComponentRequest(), instance_ids);
   }
 
   CallbackResult cleanup_component(const std::string & name)
   {
-    auto request = backend_.cleanupComponentRequest();
-    request.setInstanceId(component_id(name));
-    auto response = request.send().wait(io_context_.waitScope);
-    auto result = response.getResult();
-    return {result.getSuccess(), result.getMessage().cStr()};
+    return cleanup_instances({component_id(name)});
+  }
+
+  CallbackResult cleanup_instances(const std::vector<std::string> & instance_ids)
+  {
+    return call_instances(backend_.cleanupComponentRequest(), instance_ids);
   }
 
   CallbackResult activate_component(
     const std::string & name, const ClientAdapter & adapter, HandoverState state)
   {
     auto request = backend_.activateComponentRequest();
-    request.setInstanceId(component_id(name));
-    auto wire = request.initState();
+    auto wire = request.initHandoverStates(1)[0];
     uint64_t schema_id = 0;
     auto encoded = adapter.encode_lifecycle_state__(state, schema_id, wire.initPayload());
     if (!encoded.success) {return encoded;}
     wire.setSchemaId(schema_id);
+    return call_instances(request, {component_id(name)});
+  }
+
+  CallbackResult activate_instances(
+    const std::vector<std::string> & instance_ids,
+    capnp::List<runtime::HandoverState>::Reader handover_states = {})
+  {
+    auto request = backend_.activateComponentRequest();
+    request.setHandoverStates(handover_states);
+    return call_instances(request, instance_ids);
+  }
+
+  CallbackResult deactivate_component(const std::string & name)
+  {
+    return deactivate_instances({component_id(name)});
+  }
+
+  CallbackResult deactivate_instances(const std::vector<std::string> & instance_ids)
+  {
+    return call_instances(backend_.deactivateComponentRequest(), instance_ids);
+  }
+
+  CallbackResult switch_components(
+    const std::vector<std::string> & deactivate, const std::vector<std::string> & activate,
+    capnp::List<runtime::HandoverState>::Reader handover_states = {})
+  {
+    auto request = backend_.switchComponentsRequest();
+    auto outgoing = request.initDeactivate(deactivate.size());
+    for (std::size_t i = 0; i < deactivate.size(); ++i) {outgoing.set(i, deactivate[i]);}
+    auto incoming = request.initActivate(activate.size());
+    for (std::size_t i = 0; i < activate.size(); ++i) {incoming.set(i, activate[i]);}
+    request.setHandoverStates(handover_states);
     auto response = request.send().wait(io_context_.waitScope);
     auto result = response.getResult();
     return {result.getSuccess(), result.getMessage().cStr()};
-  }
-
-  DeactivationResult<HandoverState> deactivate_component(
-    const std::string & name, const ClientAdapter & adapter)
-  {
-    auto request = backend_.deactivateComponentRequest();
-    request.setInstanceId(component_id(name));
-    auto response = request.send().wait(io_context_.waitScope);
-    auto remote = response.getResult();
-    auto lifecycle = remote.getResult();
-    CallbackResult result{lifecycle.getSuccess(), lifecycle.getMessage().cStr()};
-    if (!result.success) {return {std::move(result), {}};}
-    if (!remote.hasState()) {return {std::move(result), {}};}
-    HandoverState state;
-    auto wire = remote.getState();
-    auto decoded = adapter.decode_lifecycle_state__(wire.getSchemaId(), wire.getPayload(), state);
-    if (!decoded.success) {return {std::move(decoded), {}};}
-    return {std::move(result), std::move(state)};
   }
 
   CallbackResult load_component(
@@ -478,38 +606,31 @@ public:
 
   CallbackResult unload_component(const std::string & instance_id)
   {
-    auto request = backend_.unloadComponentRequest();
-    request.setInstanceId(instance_id);
-    auto response = request.send().wait(io_context_.waitScope);
-    auto result = response.getResult();
-    if (result.getSuccess()) {component_ids_by_connection_.clear();}
-    return {result.getSuccess(), result.getMessage().cStr()};
+    return unload_instances({instance_id});
   }
 
-  CallbackResult reload_component(const std::string & instance_id, bool transfer_state = false)
+  CallbackResult unload_instances(const std::vector<std::string> & instance_ids)
   {
+    // Earlier entries may succeed before a later entry fails. Rediscover IDs on retry.
+    component_ids_by_connection_.clear();
+    return call_instances(backend_.unloadComponentRequest(), instance_ids);
+  }
+
+  CallbackResult reload_component(
+    const std::string & instance_id,
+    capnp::List<runtime::HandoverState>::Reader handover_states = {})
+  {
+    return reload_instances({instance_id}, handover_states);
+  }
+
+  CallbackResult reload_instances(
+    const std::vector<std::string> & instance_ids,
+    capnp::List<runtime::HandoverState>::Reader handover_states = {})
+  {
+    component_ids_by_connection_.clear();
     auto request = backend_.reloadComponentRequest();
-    request.setInstanceId(instance_id);
-    request.setTransferState(transfer_state);
-    auto response = request.send().wait(io_context_.waitScope);
-    auto result = response.getResult();
-    if (result.getSuccess()) {component_ids_by_connection_.clear();}
-    return {result.getSuccess(), result.getMessage().cStr()};
-  }
-
-  CallbackResult switch_components(
-    const std::string & connection_name, const std::string & source_instance_id,
-    const std::string & target_instance_id, bool transfer_state = true)
-  {
-    auto request = backend_.switchComponentsRequest();
-    request.setConnectionName(connection_name);
-    request.setSourceInstanceId(source_instance_id);
-    request.setTargetInstanceId(target_instance_id);
-    request.setTransferState(transfer_state);
-    auto response = request.send().wait(io_context_.waitScope);
-    auto result = response.getResult();
-    if (result.getSuccess()) {component_ids_by_connection_.erase(connection_name);}
-    return {result.getSuccess(), result.getMessage().cStr()};
+    request.setHandoverStates(handover_states);
+    return call_instances(request, instance_ids);
   }
 
   std::vector<RemoteComponentStatus> list_components()

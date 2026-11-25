@@ -93,12 +93,11 @@ public:
       });
   }
 
-  DeactivationResult<HandoverState> deactivate_component(
-    const std::string & name, const ClientAdapter & adapter)
+  CallbackResult deactivate_component(const std::string & name)
   {
     return executor_.call(
-      [this, &name, &adapter](kj::AsyncIoContext &) {
-        return rpc_client_->deactivate_component(name, adapter);
+      [this, &name](kj::AsyncIoContext &) {
+        return rpc_client_->deactivate_component(name);
       });
   }
 
@@ -120,23 +119,13 @@ public:
       });
   }
 
-  CallbackResult reload_component(const std::string & instance_id, bool transfer_state = false)
+  CallbackResult reload_component(
+    const std::string & instance_id,
+    capnp::List<runtime::HandoverState>::Reader handover_states = {})
   {
     return executor_.call(
-      [this, &instance_id, transfer_state](kj::AsyncIoContext &) {
-        return rpc_client_->reload_component(instance_id, transfer_state);
-      });
-  }
-
-  CallbackResult switch_components(
-    const std::string & connection_name, const std::string & source_instance_id,
-    const std::string & target_instance_id, bool transfer_state = true)
-  {
-    return executor_.call(
-      [this, &connection_name, &source_instance_id, &target_instance_id, transfer_state](
-        kj::AsyncIoContext &) {
-        return rpc_client_->switch_components(
-          connection_name, source_instance_id, target_instance_id, transfer_state);
+      [this, &instance_id, handover_states](kj::AsyncIoContext &) {
+        return rpc_client_->reload_component(instance_id, handover_states);
       });
   }
 

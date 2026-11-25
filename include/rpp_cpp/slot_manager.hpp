@@ -13,6 +13,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "plugin_def.hpp"
@@ -22,6 +23,19 @@
 
 namespace rpp
 {
+
+/// Slot-local component names; bridges resolve wire instance IDs before forming the request.
+struct SwitchRequest
+{
+  std::vector<std::string> deactivate{};
+  std::vector<std::string> activate{};
+};
+
+/// Success and an owned callback result; void callbacks produce std::monostate.
+/// Failure always leaves the optional empty, including when the callback throws.
+template<typename T>
+using ActiveCallResult = std::pair<
+  bool, std::optional<std::conditional_t<std::is_void_v<T>, std::monostate, T>>>;
 
 /// A temporary, lifecycle-guarded handle to an active component.
 ///
@@ -117,7 +131,7 @@ private:
   static CallbackResult cleanup_component(ComponentData & component);
   static CallbackResult cleanup_subcomponents(ComponentData & component);
   static CallbackResult activate_component(ComponentData & component, HandoverState state);
-  static DeactivationResult<HandoverState> deactivate_component(ComponentData & component);
+  static CallbackResult deactivate_component(ComponentData & component);
   static CallbackResult activate_subcomponents(ComponentData & component);
   static CallbackResult deactivate_subcomponents(ComponentData & component, Timeout timeout);
   static CallbackResult deactivate_descendants_for_shutdown(
@@ -133,7 +147,7 @@ private:
   static CallbackResult configure_external_component(ComponentData & component);
   static CallbackResult cleanup_external_component(ComponentData & component);
   static CallbackResult activate_external_component(ComponentData & component, HandoverState state);
-  static DeactivationResult<HandoverState> deactivate_external_component(ComponentData & component);
+  static CallbackResult deactivate_external_component(ComponentData & component);
   static CallbackResult release_external_component_process(ComponentData & component);
   static CallbackResult request_deactivation(ComponentData & component);
 
@@ -168,7 +182,7 @@ private:
   template<typename Callback>
   static CallbackResult capture(const std::string & operation, Callback callback);
   CallbackResult drain(Entry &, Timeout);
-  DeactivationResult<HandoverState> stop(Entry &);
+  CallbackResult stop(Entry &);
   CallbackResult initialize(
     const detail::ComponentBuildRequest & request, const PreparedComponents & prepared,
     std::unique_ptr<ComponentData> prepared_component = {});
@@ -200,10 +214,9 @@ private:
       if (entry) {owner->release_call(*entry);}
     }
   };
-  ActiveCall borrow(const std::string &, std::optional<std::string_view> expected_instance_id);
   std::optional<ActiveCall> try_borrow(
-    const std::optional<std::string> & component_name,
-    std::optional<std::string_view> expected_instance_id);
+    const std::string * component_name,
+    std::optional<std::string_view> expected_instance_id, bool throw_on_invalid);
 
 public:
   /// Create an empty slot with its factory, activation policy, dynamic permission and validators.
@@ -286,9 +299,9 @@ public:
     std::optional<std::string_view> expected_instance_id = {});
 
   /// Close guarded admission, drain participating calls, and synchronously deactivate an entry.
-  /// Return optional handover state; timeout/failure retains the runtime for recovery.
+  /// A timeout or failure retains the runtime for recovery.
   /// Direct plugin calls remain governed by the plugin, not by this gate.
-  DeactivationResult<HandoverState> deactivate(
+  CallbackResult deactivate(
     const std::string & name,
     Timeout timeout = Timeout::max(), std::optional<std::string_view> expected_instance_id = {});
 
@@ -304,16 +317,10 @@ public:
     const std::string & name, Timeout timeout = Timeout::max(),
     std::optional<std::string_view> expected_instance_id = {});
 
-  /// Synchronously deactivate the source, then activate/select the target in a dynamic slot.
-  /// Optionally transfer compatible handover state; source failure prevents target activation.
-  CallbackResult switch_components(
-    const std::string & source, const std::string & target,
-    bool transfer_state = true, Timeout timeout = Timeout::max());
-
-  /// Synchronously unload, rebuild, configure, and optionally reactivate a dynamic entry.
-  /// Preserve handover state when requested; refresh runs after unload and before rebuilding.
+  /// Unload, rebuild and configure a dynamic entry. Previously active entries
+  /// reactivate with caller-provided state. Refresh runs before rebuilding.
   CallbackResult reload(
-    const std::string & name, bool transfer_state = false,
+    const std::string & name, HandoverState state = {},
     Timeout timeout = Timeout::max(), std::function<void(const std::string &)> refresh = {});
 
   /// Synchronously shut down all entries in reverse registration order, including static slots.
@@ -337,7 +344,8 @@ public:
     std::optional<std::string> component_name = {},
     std::optional<std::string_view> expected_instance_id = {})
   {
-    auto call = try_borrow(component_name, expected_instance_id);
+    auto call = try_borrow(
+      component_name ? &*component_name : nullptr, expected_instance_id, true);
     if (!call) {return {};}
     auto instance = std::dynamic_pointer_cast<T>(call->instance);
     if (!instance) {throw LifecycleError("Managed plugin type mismatch");}
@@ -350,24 +358,37 @@ public:
    * Used by ComponentContext::with_active_component(); ordinary plugin calls are not tracked.
    * Concurrent mode counts calls without tracking thread IDs; single-threaded mode checks nesting.
    * All lifecycle/membership operations stay on the owning thread, outside affected guards.
+   * An empty name selects the current component of an exclusive slot.
    * The manager must outlive this call. Direct pointers bypass the gate in every lifecycle state.
-   * Return and exception paths both release the guard.
+   * Returns {true, value} on success, {false, nullopt} on unavailable/stale entries,
+   * type mismatch, or callback exceptions. Void callbacks return std::monostate.
+   * Every path releases the guard; callback side effects are not rolled back.
    * It does not lock the plugin for the callback's duration: concurrent calls remain possible.
    */
   template<typename T, typename Callback>
   auto with_active(
     const std::string & name, Callback && callback,
-    std::optional<std::string_view> expected_instance_id = {}) -> std::invoke_result_t<Callback,
-    T &>
+    std::optional<std::string_view> expected_instance_id = {}) noexcept
+  -> ActiveCallResult<std::invoke_result_t<Callback, T &>>
   {
     using Result = std::invoke_result_t<Callback, T &>;
     static_assert(
       !std::is_pointer_v<Result>&& !std::is_reference_v<Result>,
       "Return owned values, not borrowed plugin pointers/references");
-    auto guard = borrow(name, expected_instance_id);
-    auto * plugin = dynamic_cast<T *>(guard.instance.get());
-    if (!plugin) {throw LifecycleError("Managed plugin type mismatch");}
-    return std::invoke(std::forward<Callback>(callback), *plugin);
+    try {
+      auto guard = try_borrow(name.empty() ? nullptr : &name, expected_instance_id, false);
+      if (!guard) {return {};}
+      auto * plugin = dynamic_cast<T *>(guard->instance.get());
+      if (!plugin) {return {};}
+      if constexpr (std::is_void_v<Result>) {
+        std::invoke(std::forward<Callback>(callback), *plugin);
+        return {true, std::monostate{}};
+      } else {
+        return {true, std::invoke(std::forward<Callback>(callback), *plugin)};
+      }
+    } catch (...) {
+      return {};
+    }
   }
 };
 }  // namespace rpp

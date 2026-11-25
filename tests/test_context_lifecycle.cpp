@@ -126,7 +126,7 @@ TEST(ContextLifecycle, EmptyContextSucceeds)
   EXPECT_TRUE(context.configure().success);
   EXPECT_TRUE(context.cleanup().success);
   EXPECT_TRUE(context.activate().success);
-  EXPECT_TRUE(context.deactivate().result.success);
+  EXPECT_TRUE(context.deactivate().success);
 }
 
 TEST(ContextLifecycle, ActivationAndDeactivationAffectOnlyTheCurrentPlugin)
@@ -148,7 +148,7 @@ TEST(ContextLifecycle, ActivationAndDeactivationAffectOnlyTheCurrentPlugin)
 
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
   events.clear();
-  ASSERT_TRUE(context.deactivate().result.success);
+  ASSERT_TRUE(context.deactivate().success);
   EXPECT_EQ(events, (std::vector<std::string>{"deactivate parent"}));
   EXPECT_EQ(context.get_subcomponent_statuses("children")[0].state, rpp::LifecycleState::ACTIVE);
   EXPECT_FALSE(context.cleanup().success);
@@ -168,7 +168,7 @@ TEST(ContextLifecycle, PluginsCanManageComponentsFromTheirCallbacks)
   ASSERT_TRUE(context.configure().success);
   events.clear();
   ASSERT_TRUE(context.activate().success);
-  ASSERT_TRUE(context.deactivate().result.success);
+  ASSERT_TRUE(context.deactivate().success);
   EXPECT_EQ(
     events, (std::vector<std::string>{"activate first", "activate second", "activate parent",
       "deactivate parent", "deactivate second", "deactivate first"}));
@@ -191,7 +191,7 @@ TEST(ContextLifecycle, ParentCallbackFailureLeavesChildRecoveryToThePlugin)
   ASSERT_TRUE(context.configure().success);
   EXPECT_FALSE(context.activate().success);
   EXPECT_EQ(context.get_subcomponent_statuses("children")[0].state, rpp::LifecycleState::ACTIVE);
-  ASSERT_TRUE(context.deactivate().result.success);
+  ASSERT_TRUE(context.deactivate().success);
   EXPECT_EQ(context.get_subcomponent_statuses("children")[0].state, rpp::LifecycleState::INACTIVE);
   EXPECT_TRUE(context.close().success);
 }
@@ -309,17 +309,15 @@ TEST(ContextLifecycle, HandoverIsIndependentOfChildTransitions)
   ASSERT_TRUE(context.activate(std::move(input)).success);
   EXPECT_EQ(context.get_subcomponent_statuses("children")[0].state, rpp::LifecycleState::INACTIVE);
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
-  auto result = context.deactivate();
-  ASSERT_TRUE(result.result.success);
-  ASSERT_TRUE(result.state.has_value());
+  auto snapshot = *parent->estimate;
+  ASSERT_TRUE(context.deactivate().success);
   parent->estimate->position.push_back(3.0);
-  EXPECT_EQ(result.state->get<Estimate>().position, (std::vector<double>{1.0}));
+  EXPECT_EQ(snapshot.position, (std::vector<double>{1.0}));
 
-  ASSERT_TRUE(context.activate(std::move(*result.state)).success);
+  ASSERT_TRUE(context.activate(std::move(snapshot)).success);
   child->fail_deactivate = true;
   const auto stopped_parent = context.deactivate();
-  EXPECT_TRUE(stopped_parent.result.success);
-  EXPECT_TRUE(stopped_parent.state.has_value());
+  EXPECT_TRUE(stopped_parent.success);
   EXPECT_FALSE(context.get_context().deactivate_subcomponents().success);
   child->fail_deactivate = false;
   EXPECT_TRUE(context.close().success);
@@ -396,7 +394,6 @@ TEST(ContextSlots, StaticOptionAllowsLifecycleButRejectsDynamicSelectionAndMembe
   const auto & controller_context = context.get_context().get_subcomponent_context("controllers");
   const auto first = controller_context.get_instance<AxisController>();
   EXPECT_FALSE(context.activate_component("controllers", "second").success);
-  EXPECT_FALSE(context.switch_component("controllers", "first", "second").success);
   EXPECT_FALSE(context.load_component("controllers", "third", "/third").success);
   EXPECT_FALSE(context.unload_component("controllers", "first").success);
   EXPECT_FALSE(context.reload_component("controllers", "first").success);
@@ -457,11 +454,8 @@ TEST(ContextSlots, ParentSwitchAndUnloadKeepChildSwitchPermissionsIndependent)
   EXPECT_FALSE(
     rpp::ComponentRuntimeAccess::registered_component(parent, "children",
     "child_first").allows_dynamic_components());
-  const auto rejected = parent.switch_component("children", "child_first", "child_second", false);
-  EXPECT_FALSE(rejected.success);
-  EXPECT_NE(rejected.message.find("disabled"), std::string::npos);
-
-  ASSERT_TRUE(root.switch_component("controllers", "first", "second", false).success);
+  ASSERT_TRUE(root.deactivate_component("controllers", "first").success);
+  ASSERT_TRUE(root.activate_component("controllers", "second").success);
   for (const auto & child : parent.get_subcomponent_statuses("children")) {
     EXPECT_EQ(child.state, rpp::LifecycleState::ACTIVE);
   }
@@ -510,7 +504,8 @@ TEST(ContextSlots, SingleAndOptionUseTheSameExclusivePolicy)
     ASSERT_TRUE(context.load_component("controllers", "second", "/second").success);
     ASSERT_TRUE(context.configure_component("controllers", "second").success);
     EXPECT_FALSE(context.activate_component("controllers", "second").success);
-    ASSERT_TRUE(context.switch_component("controllers", "first", "second").success);
+    ASSERT_TRUE(context.deactivate_component("controllers", "first").success);
+    ASSERT_TRUE(context.activate_component("controllers", "second").success);
     const auto info = context.get_subcomponent_statuses("controllers");
     ASSERT_EQ(info.size(), 2u);
     EXPECT_EQ(info[0].state, rpp::LifecycleState::INACTIVE);
@@ -522,7 +517,7 @@ TEST(ContextSlots, SingleAndOptionUseTheSameExclusivePolicy)
     ASSERT_TRUE(context.unload_component("controllers", "first").success);
     ASSERT_TRUE(context.load_component("controllers", "first", "/replacement").success);
     ASSERT_TRUE(context.configure_component("controllers", "first").success);
-    ASSERT_TRUE(context.deactivate_component("controllers", "second").result.success);
+    ASSERT_TRUE(context.deactivate_component("controllers", "second").success);
     EXPECT_FALSE(first->activate().success);
     EXPECT_TRUE(context.close().success);
   }
@@ -548,7 +543,7 @@ TEST(ContextSlots, ListActivatesMultipleComponentsAndReturnsRetainableHandles)
   for (const auto & info : context.get_subcomponent_statuses("controllers")) {
     EXPECT_EQ(info.state, rpp::LifecycleState::ACTIVE);
   }
-  EXPECT_TRUE(context.deactivate_component("controllers", "surge").result.success);
+  EXPECT_TRUE(context.deactivate_component("controllers", "surge").success);
   EXPECT_TRUE(context.activate_component("controllers", "surge").success);
   EXPECT_TRUE(context.close().success);
   EXPECT_FALSE(children.front()->activate().success);
@@ -613,11 +608,13 @@ TEST(ContextSlots, ManagerRejectsSelfWaitDuringOwnerShutdown)
     "controllers::Controller");
   ASSERT_TRUE(context.configure().success);
   ASSERT_TRUE(context.get_context().activate_subcomponents().success);
-  auto result = context.get_context().with_active_component<AxisController>(
+  auto [success, result] = context.get_context().with_active_component<AxisController>(
     "controllers", "first", [&](auto &) {
       return context.close();
     });
-  EXPECT_FALSE(result.success);
+  ASSERT_TRUE(success);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_FALSE(result->success);
   EXPECT_TRUE(context.close().success);
 }
 
@@ -694,7 +691,7 @@ TEST(ContextLifecycle, ChildTransitionsAreSynchronousAndSelfDeactivationWaitsFor
   EXPECT_FALSE(child.is_active());
   EXPECT_EQ(events, (std::vector<std::string>{"deactivate plugin"}));
   ASSERT_TRUE(child.activate().success);
-  ASSERT_TRUE(child.deactivate().result.success);
+  ASSERT_TRUE(child.deactivate().success);
   EXPECT_FALSE(child.is_active());
   EXPECT_TRUE(runtime.close().success);
 }
@@ -718,7 +715,7 @@ TEST(ContextLifecycle, ParentReceivesChildControlInsteadOfTheChildsSelfContext)
   EXPECT_EQ(retained_view->get_instance<Recorder>(), child_plugin);
   ASSERT_TRUE(child.activate().success);
   EXPECT_TRUE(child_plugin->context->is_active());
-  ASSERT_TRUE(child.deactivate().result.success);
+  ASSERT_TRUE(child.deactivate().success);
   EXPECT_FALSE(child_plugin->context->is_active());
   EXPECT_TRUE(moved.close().success);
   EXPECT_THROW(retained_view->is_active(), rpp::LifecycleError);

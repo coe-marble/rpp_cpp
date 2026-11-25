@@ -55,27 +55,19 @@ rpp::RpcControlService::SlotControl test_slot_control(
       return name ? manager->activate(*name, std::move(state), instance_id) : missing(instance_id);
     },
     [manager, name_for,
-      missing](const std::string & instance_id) -> rpp::DeactivationResult<rpp::HandoverState> {
+      missing](const std::string & instance_id) {
       auto name = name_for(instance_id);
       return name ? manager->deactivate(*name, std::chrono::milliseconds::max(), instance_id) :
-             rpp::DeactivationResult<rpp::HandoverState>{missing(instance_id), {}};
+             missing(instance_id);
     },
     [manager, name_for, missing](const std::string & instance_id) {
       auto name = name_for(instance_id);
       return name ? manager->unload(*name, std::chrono::milliseconds::max(),
           instance_id) : missing(instance_id);
     },
-    [manager, name_for, missing](const std::string & instance_id, bool transfer_state) {
+    [manager, name_for, missing](const std::string & instance_id, rpp::HandoverState state) {
       auto name = name_for(instance_id);
-      return name ? manager->reload(*name, transfer_state) : missing(instance_id);
-    },
-    [manager, name_for, missing](
-      const std::string & source_id, const std::string & target_id, bool transfer_state) {
-      auto source = name_for(source_id);
-      auto target = name_for(target_id);
-      if (!source) {return missing(source_id);}
-      if (!target) {return missing(target_id);}
-      return manager->switch_components(*source, *target, transfer_state);
+      return name ? manager->reload(*name, std::move(state)) : missing(instance_id);
     },
     [manager] {return manager->close();},
     [] {return rpp::CallbackResult{};},
@@ -90,7 +82,6 @@ void exercise_remote_lifecycle_handover()
   auto plugin = std::make_shared<RemoteStatefulPlugin>();
   auto runtime = rpp::ComponentRuntimeAccess::plugin<Threading>(plugin);
   auto server_adapter = std::make_shared<RemoteServerAdapter>();
-  RemoteClientAdapter client_adapter;
   constexpr const char * connection_name = "remote";
   constexpr const char * component_name = "root";
   const auto instance_id = runtime.get_context().get_instance_id();
@@ -107,44 +98,37 @@ void exercise_remote_lifecycle_handover()
   EXPECT_STREQ(listed.getComponents()[0].getInstanceId().cStr(), instance_id.c_str());
 
   auto configure = client.configureComponentRequest();
-  configure.setInstanceId(instance_id);
+  configure.initInstanceIds(1).set(0, instance_id);
   EXPECT_TRUE(configure.send().wait(io.waitScope).getResult().getSuccess());
 
-  auto activate = [&](rpp::HandoverState state) {
+  auto activate = [&](const std::string & state_name) {
       auto request = client.activateComponentRequest();
-      request.setInstanceId(instance_id);
-      auto wire = request.initState();
+      request.initInstanceIds(1).set(0, instance_id);
+      auto wire = request.initHandoverStates(1)[0];
+      RemoteClientAdapter adapter;
       uint64_t schema_id = 0;
-      EXPECT_TRUE(client_adapter.encode_lifecycle_state__(
-          state, schema_id, wire.initPayload()).success);
+      EXPECT_TRUE(adapter.encode_lifecycle_state__(
+        rpp::HandoverState(RemoteState::Const::named(state_name)), schema_id,
+        wire.initPayload()).success);
       wire.setSchemaId(schema_id);
       return request.send().wait(io.waitScope).getResult().getSuccess();
     };
-  EXPECT_TRUE(activate(rpp::HandoverState(RemoteState::Const::named("initial-state"))));
+  EXPECT_TRUE(activate("initial-state"));
 
-  rpp::HandoverState returned_state;
-  {
-    auto deactivate = client.deactivateComponentRequest();
-    deactivate.setInstanceId(instance_id);
-    auto stopped_response = deactivate.send().wait(io.waitScope);
-    auto stopped = stopped_response.getResult();
-    ASSERT_TRUE(stopped.getResult().getSuccess());
-    ASSERT_TRUE(stopped.hasState());
-    EXPECT_TRUE(client_adapter.decode_lifecycle_state__(
-        stopped.getState().getSchemaId(), stopped.getState().getPayload(), returned_state).success);
-  }  // The move-only state must outlive this RPC response.
-  ASSERT_TRUE(returned_state.holds<RemoteState::Const>());
-  EXPECT_EQ(returned_state.get<RemoteState::Const>().name(), "returned-state");
+  auto deactivate = client.deactivateComponentRequest();
+  deactivate.initInstanceIds(1).set(0, instance_id);
+  ASSERT_TRUE(deactivate.send().wait(io.waitScope).getResult().getSuccess());
 
-  EXPECT_TRUE(activate(std::move(returned_state)));
+  EXPECT_TRUE(activate("application-state"));
   auto final_deactivate = client.deactivateComponentRequest();
-  final_deactivate.setInstanceId(instance_id);
-  EXPECT_TRUE(final_deactivate.send().wait(io.waitScope).getResult().getResult().getSuccess());
+  final_deactivate.initInstanceIds(1).set(0, instance_id);
+  EXPECT_TRUE(final_deactivate.send().wait(io.waitScope).getResult().getSuccess());
 
   auto cleanup = client.cleanupComponentRequest();
-  cleanup.setInstanceId(instance_id);
+  cleanup.initInstanceIds(1).set(0, instance_id);
   EXPECT_TRUE(cleanup.send().wait(io.waitScope).getResult().getSuccess());
-  EXPECT_EQ(plugin->activated_with, (std::vector<std::string>{"initial-state", "returned-state"}));
+  EXPECT_EQ(plugin->activated_with,
+    (std::vector<std::string>{"initial-state", "application-state"}));
   EXPECT_EQ(plugin->events, (std::vector<std::string>{
       "configure", "activate", "deactivate", "activate", "deactivate", "cleanup"}));
 }
@@ -167,12 +151,12 @@ void exercise_remote_slot_management()
   auto manager = rpp::ComponentRuntimeAccess::slot_manager(script, "remote");
   auto adapter = std::make_shared<RemoteServerAdapter>();
   auto service = kj::heap<rpp::RpcControlService>();
-  service->register_slot(
-    "remote", test_slot_control(
+  auto control = test_slot_control(
       manager, adapter,
-      [manager](const std::string & path, const std::string &) {
-        return manager->load(path, path);
-      }));
+    [manager](const std::string & path, const std::string &) {
+      return manager->load(path, path);
+      });
+  service->register_slot("remote", std::move(control));
   auto io = kj::setupAsyncIo();
   rpp::runtime::PluginRuntime::Client client(kj::mv(service));
 
@@ -202,39 +186,59 @@ void exercise_remote_slot_management()
 
   const auto configure = [&](const std::string & instance_id) {
       auto request = client.configureComponentRequest();
-      request.setInstanceId(instance_id);
+      request.initInstanceIds(1).set(0, instance_id);
       return request.send().wait(io.waitScope).getResult().getSuccess();
     };
   ASSERT_TRUE(configure(first_id));
   ASSERT_TRUE(configure(second_id));
   auto activate = client.activateComponentRequest();
-  activate.setInstanceId(first_id);
-  activate.initState().setSchemaId(0);
+  activate.initInstanceIds(1).set(0, first_id);
   ASSERT_TRUE(activate.send().wait(io.waitScope).getResult().getSuccess());
 
   auto switch_request = client.switchComponentsRequest();
-  switch_request.setConnectionName("remote");
-  switch_request.setSourceInstanceId(first_id);
-  switch_request.setTargetInstanceId(second_id);
-  switch_request.setTransferState(true);
+  switch_request.initDeactivate(1).set(0, first_id);
+  switch_request.initActivate(1).set(0, second_id);
+  auto wire = switch_request.initHandoverStates(1)[0];
+  RemoteClientAdapter state_adapter;
+  uint64_t schema_id = 0;
+  ASSERT_TRUE(state_adapter.encode_lifecycle_state__(
+    rpp::HandoverState(RemoteState::Const::named("application-state")), schema_id,
+    wire.initPayload()).success);
+  wire.setSchemaId(schema_id);
   ASSERT_TRUE(switch_request.send().wait(io.waitScope).getResult().getSuccess());
   ASSERT_EQ(plugins["second"].front()->activated_with,
-    (std::vector<std::string>{"returned-state"}));
+    (std::vector<std::string>{"application-state"}));
 
   auto unload = client.unloadComponentRequest();
-  unload.setInstanceId(first_id);
+  unload.initInstanceIds(1).set(0, first_id);
   ASSERT_TRUE(unload.send().wait(io.waitScope).getResult().getSuccess());
   auto reload = client.reloadComponentRequest();
-  reload.setInstanceId(second_id);
-  reload.setTransferState(true);
+  reload.initInstanceIds(1).set(0, second_id);
+  auto reload_state = reload.initHandoverStates(1)[0];
+  ASSERT_TRUE(state_adapter.encode_lifecycle_state__(
+    rpp::HandoverState(RemoteState::Const::named("reloaded-state")), schema_id,
+    reload_state.initPayload()).success);
+  reload_state.setSchemaId(schema_id);
   ASSERT_TRUE(reload.send().wait(io.waitScope).getResult().getSuccess());
+  ASSERT_EQ(plugins["second"].size(), 2u);
+  EXPECT_EQ(plugins["second"].back()->activated_with, (std::vector<std::string>{"reloaded-state"}));
+  EXPECT_EQ(manager->get_state("second"), rpp::LifecycleState::ACTIVE);
+
+  const auto replacement_id = manager->get_status("second").instance_id;
+  auto deactivate_target = client.deactivateComponentRequest();
+  deactivate_target.initInstanceIds(1).set(0, replacement_id);
+  ASSERT_TRUE(deactivate_target.send().wait(io.waitScope).getResult().getSuccess());
+  auto inactive_reload = client.reloadComponentRequest();
+  inactive_reload.initInstanceIds(1).set(0, replacement_id);
+  ASSERT_TRUE(inactive_reload.send().wait(io.waitScope).getResult().getSuccess());
 
   listed = list();
   ASSERT_EQ(listed.getComponents().size(), 2u);
   EXPECT_EQ(listed.getComponents()[0].getInstanceId().size(), 0u);
   EXPECT_STRNE(listed.getComponents()[1].getInstanceId().cStr(), second_id.c_str());
-  ASSERT_EQ(plugins["second"].size(), 2u);
-  EXPECT_EQ(plugins["second"].back()->activated_with, (std::vector<std::string>{"returned-state"}));
+  ASSERT_EQ(plugins["second"].size(), 3u);
+  EXPECT_EQ(manager->get_state("second"), rpp::LifecycleState::INACTIVE);
+  EXPECT_TRUE(plugins["second"].back()->activated_with.empty());
 }
 }  // namespace
 
@@ -261,10 +265,10 @@ TEST(RpcControlService, AddressesComponentInstancesWithinHostedSlots)
   EXPECT_STREQ(list.getComponents()[0].getConnectionName().cStr(), "first");
   EXPECT_STREQ(list.getComponents()[1].getConnectionName().cStr(), "second");
   auto missing = client.configureComponentRequest();
-  missing.setInstanceId("missing");
+  missing.initInstanceIds(1).set(0, "missing");
   EXPECT_FALSE(missing.send().wait(io.waitScope).getResult().getSuccess());
   auto request = client.configureComponentRequest();
-  request.setInstanceId(first.get_context().get_instance_id());
+  request.initInstanceIds(1).set(0, first.get_context().get_instance_id());
   EXPECT_TRUE(request.send().wait(io.waitScope).getResult().getSuccess());
   EXPECT_EQ(first_plugin->events, (std::vector<std::string>{"configure"}));
   EXPECT_TRUE(second_plugin->events.empty());
@@ -289,21 +293,87 @@ TEST(RpcControlService, CallbackExceptionsBecomeLifecycleFailures)
     },
     [](const std::string &) {return rpp::CallbackResult{};},
     [](const std::string &, rpp::HandoverState) {return rpp::CallbackResult{};},
-    [](const std::string &) {return rpp::DeactivationResult<rpp::HandoverState>{};},
     [](const std::string &) {return rpp::CallbackResult{};},
-    [](const std::string &, bool) {return rpp::CallbackResult{};},
-    [](const std::string &, const std::string &, bool) {return rpp::CallbackResult{};},
+    [](const std::string &) {return rpp::CallbackResult{};},
+    [](const std::string &, rpp::HandoverState) {return rpp::CallbackResult{};},
     [] {return rpp::CallbackResult{};},
     [] {return rpp::CallbackResult{};},
   });
   rpp::runtime::PluginRuntime::Client client(kj::mv(server));
   auto request = client.configureComponentRequest();
-  request.setInstanceId("root-instance");
+  request.initInstanceIds(1).set(0, "root-instance");
   auto response = request.send().wait(io.waitScope);
   auto result = response.getResult();
   EXPECT_FALSE(result.getSuccess());
   EXPECT_STREQ(result.getMessage().cStr(), "configuration rejected");
   EXPECT_EQ(attempts, 1);
+}
+
+TEST(RpcControlService, SwitchUsesIndependentIdListsAcrossHostedSlots)
+{
+  auto io = kj::setupAsyncIo();
+  auto service = kj::heap<rpp::RpcControlService>();
+  auto first = rpp::ComponentRuntimeAccess::plugin(std::make_shared<RemoteStatefulPlugin>());
+  auto second = rpp::ComponentRuntimeAccess::plugin(std::make_shared<RemoteStatefulPlugin>());
+  auto incoming = rpp::ComponentRuntimeAccess::plugin(std::make_shared<RemoteStatefulPlugin>());
+  auto adapter = std::make_shared<RemoteServerAdapter>();
+  service->register_slot("first",
+    test_slot_control(rpp::ComponentRuntimeAccess::owning_slot(first).lock(), adapter));
+  service->register_slot("second",
+    test_slot_control(rpp::ComponentRuntimeAccess::owning_slot(second).lock(), adapter));
+  service->register_slot("incoming",
+    test_slot_control(rpp::ComponentRuntimeAccess::owning_slot(incoming).lock(), adapter));
+  ASSERT_TRUE(first.configure().success);
+  ASSERT_TRUE(second.configure().success);
+  ASSERT_TRUE(incoming.configure().success);
+  ASSERT_TRUE(first.activate().success);
+  ASSERT_TRUE(second.activate().success);
+  rpp::runtime::PluginRuntime::Client client(kj::mv(service));
+
+  auto request = client.switchComponentsRequest();
+  auto outgoing = request.initDeactivate(2);
+  outgoing.set(0, first.get_context().get_instance_id());
+  outgoing.set(1, second.get_context().get_instance_id());
+  request.initActivate(1).set(0, incoming.get_context().get_instance_id());
+  ASSERT_TRUE(request.send().wait(io.waitScope).getResult().getSuccess());
+  EXPECT_FALSE(first.get_context().is_active());
+  EXPECT_FALSE(second.get_context().is_active());
+  EXPECT_TRUE(incoming.get_context().is_active());
+}
+
+TEST(RpcControlService, InvalidStateListIsRejectedBeforeDeactivation)
+{
+  auto io = kj::setupAsyncIo();
+  auto service = kj::heap<rpp::RpcControlService>();
+  auto outgoing = rpp::ComponentRuntimeAccess::plugin(std::make_shared<RemoteStatefulPlugin>());
+  auto incoming = rpp::ComponentRuntimeAccess::plugin(std::make_shared<RemoteStatefulPlugin>());
+  auto adapter = std::make_shared<RemoteServerAdapter>();
+  service->register_slot("outgoing",
+    test_slot_control(rpp::ComponentRuntimeAccess::owning_slot(outgoing).lock(), adapter));
+  service->register_slot("incoming",
+    test_slot_control(rpp::ComponentRuntimeAccess::owning_slot(incoming).lock(), adapter));
+  ASSERT_TRUE(outgoing.configure().success);
+  ASSERT_TRUE(incoming.configure().success);
+  ASSERT_TRUE(outgoing.activate().success);
+  rpp::runtime::PluginRuntime::Client client(kj::mv(service));
+
+  auto request = client.switchComponentsRequest();
+  request.initDeactivate(1).set(0, outgoing.get_context().get_instance_id());
+  request.initActivate(1).set(0, incoming.get_context().get_instance_id());
+  request.initHandoverStates(2);
+  EXPECT_FALSE(request.send().wait(io.waitScope).getResult().getSuccess());
+  EXPECT_TRUE(outgoing.get_context().is_active());
+  EXPECT_FALSE(incoming.get_context().is_active());
+
+  auto wrong_type = client.switchComponentsRequest();
+  wrong_type.initDeactivate(1).set(0, outgoing.get_context().get_instance_id());
+  wrong_type.initActivate(1).set(0, incoming.get_context().get_instance_id());
+  auto state = wrong_type.initHandoverStates(1)[0];
+  state.setSchemaId(0xdeadbeefULL);
+  state.initPayload().initAs<rpp::runtime::AdapterInfo>();
+  EXPECT_FALSE(wrong_type.send().wait(io.waitScope).getResult().getSuccess());
+  EXPECT_TRUE(outgoing.get_context().is_active());
+  EXPECT_FALSE(incoming.get_context().is_active());
 }
 
 TEST(RpcControlService, AdaptedLifecycleHandoverSingleThreadedHappyPath)
@@ -335,7 +405,7 @@ TEST(RpcControlService, NativeLifecycleHappyPath)
   ASSERT_TRUE(runtime.configure().success);
   ASSERT_TRUE(runtime.activate(rpp::HandoverState(RemoteState::Const::named(
     "native-state"))).success);
-  ASSERT_TRUE(runtime.deactivate().result.success);
+  ASSERT_TRUE(runtime.deactivate().success);
   ASSERT_TRUE(runtime.cleanup().success);
   EXPECT_EQ(plugin->activated_with, (std::vector<std::string>{"native-state"}));
 }

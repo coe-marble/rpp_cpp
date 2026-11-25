@@ -39,9 +39,9 @@ public:
     return CallbackResult::failure("Plugin does not implement lifecycle activation");
   }
 
-  virtual DeactivationResult<HandoverState> deactivate_state()
+  virtual CallbackResult deactivate_state()
   {
-    return {CallbackResult::failure("Plugin does not implement lifecycle deactivation"), {}};
+    return CallbackResult::failure("Plugin does not implement lifecycle deactivation");
   }
 
 protected:
@@ -64,7 +64,7 @@ class LifecyclePlugin : public Plugin
 public:
   const std::type_info & handover_state_type() const final {return typeid(State);}
   virtual CallbackResult on_activate(const std::optional<State> & state) = 0;
-  virtual DeactivationResult<State> on_deactivate() = 0;
+  virtual CallbackResult on_deactivate() = 0;
 
   CallbackResult validate_handover_state(const HandoverState & state) const final
   {
@@ -85,18 +85,9 @@ public:
     });
   }
 
-  DeactivationResult<HandoverState> deactivate_state() final
+  CallbackResult deactivate_state() final
   {
-    std::optional<HandoverState> snapshot;
-    auto result = invoke_lifecycle("on_deactivate", [&]() {
-          auto deactivation = on_deactivate();
-          if (deactivation.result.success && deactivation.state) {
-            snapshot.emplace(std::move(*deactivation.state));
-          }
-          return deactivation.result;
-    });
-    if (!result.success) {snapshot.reset();}
-    return {std::move(result), std::move(snapshot)};
+    return invoke_lifecycle("on_deactivate", [&]() {return on_deactivate();});
   }
 };
 
@@ -122,9 +113,9 @@ public:
     return invoke_lifecycle("on_activate", [&]() {return on_activate();});
   }
 
-  DeactivationResult<HandoverState> deactivate_state() final
+  CallbackResult deactivate_state() final
   {
-    return {invoke_lifecycle("on_deactivate", [&]() {return on_deactivate();}), {}};
+    return invoke_lifecycle("on_deactivate", [&]() {return on_deactivate();});
   }
 };
 

@@ -83,7 +83,7 @@ public:
 template<class Threading>
 class BasicSlotManager : public std::enable_shared_from_this<BasicSlotManager<Threading>>
 {
-  using ComponentRuntime = rpp::ComponentRuntime<Threading::concurrent>;
+  using ComponentRuntime = rpp::BasicComponentRuntime<Threading::concurrent>;
   using SlotManager = BasicSlotManager<Threading>;
   using Constructor = ComponentConstructor<Threading>;
   using ComponentData = detail::ComponentData<Threading>;

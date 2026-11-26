@@ -72,7 +72,7 @@ BasicComponentRuntimeBuilder<Threading>::create_constructor() const
 }
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::
+rpp::BasicComponentRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::
 build_component(
   const ComponentRequest & request)
 {
@@ -81,8 +81,7 @@ build_component(
 }
 
 template<class Threading>
-std::vector<rpp::ComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::
-build_components(
+std::vector<rpp::BasicComponentRuntime<Threading::concurrent>> BasicComponentRuntimeBuilder<Threading>::build_components(
   const std::vector<ComponentRequest> & requests)
 {
   std::vector<ComponentBuildRequest> build_requests;
@@ -104,7 +103,8 @@ build_components(
 }
 
 template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script(
+rpp::BasicScriptRuntime<Threading::concurrent> BasicComponentRuntimeBuilder<Threading>::build_script
+(
   const ScriptRequest & request)
 {
   std::string description_path;

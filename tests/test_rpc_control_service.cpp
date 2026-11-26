@@ -136,7 +136,7 @@ void exercise_remote_lifecycle_handover()
 template<class Threading>
 void exercise_remote_slot_management()
 {
-  using Runtime = rpp::ComponentRuntime<Threading::concurrent>;
+  using Runtime = rpp::BasicComponentRuntime<Threading::concurrent>;
   std::map<std::string, std::vector<std::shared_ptr<RemoteStatefulPlugin>>> plugins;
   typename rpp::BasicSlotManager<Threading>::RuntimeFactory factory =
     [&plugins](const std::string & name) -> Runtime {

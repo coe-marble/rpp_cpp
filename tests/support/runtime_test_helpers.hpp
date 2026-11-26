@@ -18,9 +18,9 @@ namespace rpp
 class ComponentRuntimeAccess
 {
   template<class Threading>
-  using Runtime = rpp::ComponentRuntime<Threading::concurrent>;
+  using Runtime = rpp::BasicComponentRuntime<Threading::concurrent>;
   template<class Threading>
-  using Script = rpp::ScriptRuntime<Threading::concurrent>;
+  using Script = rpp::BasicScriptRuntime<Threading::concurrent>;
   template<class Threading>
   using Manager = BasicSlotManager<Threading>;
   template<class Threading>
@@ -132,7 +132,7 @@ public:
       nullptr, params::Parameters{}, nullptr, std::move(managers), ClockOptions{}, false));
   }
 
-  static ScriptRuntime<> with_logger_and_parameters(
+  static ScriptRuntime with_logger_and_parameters(
     std::shared_ptr<RppLogger> logger,
     std::map<std::string, params::ParameterValue> parameters)
   {
@@ -176,15 +176,18 @@ public:
   {return runtime.slot(slot_name).runtimes();}
 
   template<bool Concurrent>
-  static auto owning_slot(const ComponentRuntime<Concurrent> & runtime)
-  {return std::weak_ptr<typename ComponentRuntime<Concurrent>::SlotManager>(runtime.storage_.slot);}
+  static auto owning_slot(const BasicComponentRuntime<Concurrent> & runtime)
+  {
+    return std::weak_ptr<typename BasicComponentRuntime<Concurrent>::SlotManager>(
+        runtime.storage_.slot);
+  }
 
   template<bool Concurrent>
-  static ComponentStatus status(const ComponentRuntime<Concurrent> & runtime)
+  static ComponentStatus status(const BasicComponentRuntime<Concurrent> & runtime)
   {return runtime.storage_.slot->get_status(runtime.storage_.name);}
 
   template<bool Concurrent>
-  static bool has_external_component_process(const ComponentRuntime<Concurrent> & runtime)
+  static bool has_external_component_process(const BasicComponentRuntime<Concurrent> & runtime)
   {return static_cast<bool>(runtime.component_data().external_component_process_);}
 
   template<bool Concurrent, bool IsScript>
@@ -201,11 +204,11 @@ namespace rpp::testing
 using ScenarioControllers = std::map<std::string, std::shared_ptr<ScenarioController>>;
 
 template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> simple_controllers(
+rpp::BasicScriptRuntime<Threading::concurrent> simple_controllers(
   EventLog & log, ScenarioControllers & instances,
   const std::string & declaration = "Option[controllers::Controller]", bool dynamic = true)
 {
-  using Runtime = rpp::ComponentRuntime<Threading::concurrent>;
+  using Runtime = rpp::BasicComponentRuntime<Threading::concurrent>;
   typename BasicSlotManager<Threading>::RuntimeFactory factory =
     [&log, &instances](const std::string & name) {
       auto instance = std::make_shared<ScenarioController>(name, log);
@@ -229,10 +232,10 @@ struct FakeComponentTree
 };
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> controller_tree(
+rpp::BasicComponentRuntime<Threading::concurrent> controller_tree(
   const FakeComponentTree & tree, EventLog & log, ScenarioControllers & instances)
 {
-  std::vector<rpp::ComponentRuntime<Threading::concurrent>> children;
+  std::vector<rpp::BasicComponentRuntime<Threading::concurrent>> children;
   for (const auto & child : tree.children) {
     children.push_back(controller_tree<Threading>(child, log, instances));
   }
@@ -248,14 +251,14 @@ rpp::ComponentRuntime<Threading::concurrent> controller_tree(
 }
 
 template<class Threading>
-rpp::ScriptRuntime<Threading::concurrent> nested_controllers(
+rpp::BasicScriptRuntime<Threading::concurrent> nested_controllers(
   EventLog & log,
   ScenarioControllers & instances)
 {
   // script.controllers (exclusive)
   //   a -> children (list): a.left -> a.left.leaf, a.right
   //   b -> children (list): b.left -> b.left.leaf, b.right
-  std::vector<rpp::ComponentRuntime<Threading::concurrent>> branches;
+  std::vector<rpp::BasicComponentRuntime<Threading::concurrent>> branches;
   for (const auto * name : {"a", "b"}) {
     const std::string parent = name;
     branches.push_back(controller_tree<Threading>(
@@ -267,21 +270,21 @@ rpp::ScriptRuntime<Threading::concurrent> nested_controllers(
 }
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> component_root(
+rpp::BasicComponentRuntime<Threading::concurrent> component_root(
   const FakeComponentTree & tree, EventLog & log, ScenarioControllers & instances)
 {
   return controller_tree<Threading>(tree, log, instances);
 }
 
-inline ComponentRuntime<> controller(const std::string & name, std::set<std::string> axes = {})
+inline ComponentRuntime controller(const std::string & name, std::set<std::string> axes = {})
 {
   return ComponentRuntimeAccess::named(std::make_shared<AxisController>(std::move(axes)), name);
 }
 
-inline std::vector<ComponentRuntime<>> controllers(
+inline std::vector<ComponentRuntime> controllers(
   std::initializer_list<std::pair<std::string, std::set<std::string>>> definitions)
 {
-  std::vector<ComponentRuntime<>> result;
+  std::vector<ComponentRuntime> result;
   for (const auto & [name, axes] : definitions) {
     result.push_back(controller(name, axes));
   }
@@ -289,8 +292,8 @@ inline std::vector<ComponentRuntime<>> controllers(
 }
 
 inline CallbackResult no_axis_overlap(
-  const ComponentRuntime<> & candidate,
-  const std::vector<std::shared_ptr<const ComponentRuntime<>>> & registered)
+  const ComponentRuntime & candidate,
+  const std::vector<std::shared_ptr<const ComponentRuntime>> & registered)
 {
   const auto incoming = candidate.get_instance<AxisController>();
   for (const auto & existing : registered) {
@@ -303,10 +306,10 @@ inline CallbackResult no_axis_overlap(
   return {};
 }
 
-inline ScriptRuntime<> managed_recorder(
+inline ScriptRuntime managed_recorder(
   std::shared_ptr<Recorder> instance, SlotManager::RuntimeFactory factory = {})
 {
-  std::vector<ComponentRuntime<>> children;
+  std::vector<ComponentRuntime> children;
   children.push_back(ComponentRuntimeAccess::named(std::move(instance), "plugin"));
   return ComponentRuntimeAccess::script(
     std::move(children), "controllers::Controller", true, std::move(factory));

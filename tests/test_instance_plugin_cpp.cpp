@@ -937,7 +937,7 @@ TEST_F(NativePluginTest, TestComplexInstancePluginUsingRuntimeBuilder)
     rpp::ComponentRuntimeBuilder::RegistrationValidators validators{
     {"rpp_testing::MotionController2D",
       {{"subcomponent1",
-        [&validated](const rpp::ComponentRuntime<> & candidate, const auto & registered) {
+        [&validated](const rpp::ComponentRuntime & candidate, const auto & registered) {
           validated = true;
           return rpp::CallbackResult{registered.empty() &&
             candidate.get_context().get_parameter<float>("float_var") == 6.0f,

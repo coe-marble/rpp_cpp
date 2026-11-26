@@ -51,7 +51,7 @@ TEST(ContextLifecycle, ConfiguresChildrenFirstAndCleansParentFirst)
 {
   std::vector<std::string> events;
   auto parent = std::make_shared<Recorder>("parent", events);
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -79,7 +79,7 @@ TEST(ContextLifecycle, ConfigurationFailureStopsTraversal)
     auto failed = std::make_shared<Recorder>("failed", events);
     failed->fail_configure = !throws;
     failed->throw_configure = throws;
-    std::vector<rpp::ComponentRuntime<>> children;
+    std::vector<rpp::ComponentRuntime> children;
     children.push_back(rpp::ComponentRuntimeAccess::make(failed));
     children.push_back(
       rpp::ComponentRuntimeAccess::make(
@@ -104,7 +104,7 @@ TEST(ContextLifecycle, CleanupContinuesAndPreservesFirstFailure)
   parent->fail_cleanup = true;
   auto second = std::make_shared<Recorder>("second", events);
   second->throw_cleanup = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -133,7 +133,7 @@ TEST(ContextLifecycle, ActivationAndDeactivationAffectOnlyTheCurrentPlugin)
 {
   std::vector<std::string> events;
   auto parent = std::make_shared<Recorder>("parent", events);
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -160,7 +160,7 @@ TEST(ContextLifecycle, PluginsCanManageComponentsFromTheirCallbacks)
   std::vector<std::string> events;
   auto parent = std::make_shared<Recorder>("parent", events);
   parent->manage_components = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   for (const auto * name : {"first", "second"}) {
     children.push_back(rpp::ComponentRuntimeAccess::make(std::make_shared<Recorder>(name, events)));
   }
@@ -181,7 +181,7 @@ TEST(ContextLifecycle, ParentCallbackFailureLeavesChildRecoveryToThePlugin)
   auto parent = std::make_shared<Recorder>("parent", events);
   parent->manage_components = true;
   parent->fail_activate = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -202,7 +202,7 @@ TEST(ContextLifecycle, ActivationHelperRollsBackOnlyNewlyActivatedChildren)
     std::vector<std::string> events;
     auto second = std::make_shared<Recorder>("second", events);
     second->fail_activate = true;
-    std::vector<rpp::ComponentRuntime<>> children;
+    std::vector<rpp::ComponentRuntime> children;
     children.push_back(
       rpp::ComponentRuntimeAccess::make(
         std::make_shared<Recorder>(
@@ -235,7 +235,7 @@ TEST(ContextLifecycle, ActivationHelperContinuesRollbackAndPreservesActivationFa
   second->fail_deactivate = true;
   auto failed = std::make_shared<Recorder>("failed", events);
   failed->fail_activate = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -263,7 +263,7 @@ TEST(ContextLifecycle, DeactivationHelperContinuesAndPreservesFirstFailure)
   auto second = std::make_shared<Recorder>("second", events);
   first->fail_deactivate = true;
   second->fail_deactivate = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(rpp::ComponentRuntimeAccess::make(first));
   children.push_back(rpp::ComponentRuntimeAccess::make(second));
   auto context = rpp::ComponentRuntimeAccess::script_slots(std::move(children));
@@ -282,7 +282,7 @@ TEST(ContextLifecycle, DeactivationHelperContinuesAndPreservesFirstFailure)
 TEST(ContextLifecycle, WrongRootStateDoesNotActivateChildren)
 {
   std::vector<std::string> events;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>(
@@ -301,7 +301,7 @@ TEST(ContextLifecycle, HandoverIsIndependentOfChildTransitions)
   std::vector<std::string> events;
   auto parent = std::make_shared<Stateful>();
   auto child = std::make_shared<Recorder>("child", events);
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(rpp::ComponentRuntimeAccess::make(child));
   auto context = rpp::ComponentRuntimeAccess::make(parent, std::move(children));
   rpp::HandoverState input = Estimate{{1.0}};
@@ -326,17 +326,17 @@ TEST(ContextLifecycle, HandoverIsIndependentOfChildTransitions)
 TEST(ContextLifecycle, NestedPluginsChooseWhichDescendantsParticipate)
 {
   std::vector<std::string> events;
-  std::vector<rpp::ComponentRuntime<>> first_nested;
+  std::vector<rpp::ComponentRuntime> first_nested;
   first_nested.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>("first nested", events)));
-  std::vector<rpp::ComponentRuntime<>> second_nested;
+  std::vector<rpp::ComponentRuntime> second_nested;
   second_nested.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>("second nested", events)));
   auto second = std::make_shared<Recorder>("second", events);
   second->manage_components = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>("first", events), std::move(first_nested)));
@@ -357,11 +357,11 @@ TEST(ContextLifecycle, NestedPluginsChooseWhichDescendantsParticipate)
 TEST(ContextLifecycle, CloseStopsDescendantsUnderInactiveParents)
 {
   std::vector<std::string> events;
-  std::vector<rpp::ComponentRuntime<>> grandchildren;
+  std::vector<rpp::ComponentRuntime> grandchildren;
   grandchildren.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>("grandchild", events)));
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(
     rpp::ComponentRuntimeAccess::make(
       std::make_shared<Recorder>("middle", events), std::move(grandchildren)));
@@ -435,7 +435,7 @@ TEST(ContextSlots, PolicyReceivesEmptySlotTypesAndFixesEachPermissionAtConstruct
 
 TEST(ContextSlots, ParentSwitchAndUnloadKeepChildSwitchPermissionsIndependent)
 {
-  std::vector<rpp::ComponentRuntime<>> parents;
+  std::vector<rpp::ComponentRuntime> parents;
   parents.push_back(
     rpp::ComponentRuntimeAccess::named(
       std::make_shared<AxisController>(), "first",
@@ -623,7 +623,7 @@ TEST(ContextSlots, ParentActivationFailurePreservesAlreadyActiveChild)
   std::vector<std::string> events;
   auto parent = std::make_shared<Recorder>("parent", events);
   parent->fail_activate = true;
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(controller("first"));
   auto context = rpp::ComponentRuntimeAccess::make(parent, std::move(children));
   ASSERT_TRUE(context.configure().success);
@@ -701,7 +701,7 @@ TEST(ContextLifecycle, ParentReceivesChildControlInsteadOfTheChildsSelfContext)
   std::vector<std::string> events;
   auto parent = std::make_shared<Recorder>("parent", events);
   auto child_plugin = std::make_shared<Recorder>("child", events);
-  std::vector<rpp::ComponentRuntime<>> children;
+  std::vector<rpp::ComponentRuntime> children;
   children.push_back(rpp::ComponentRuntimeAccess::make(child_plugin));
   auto runtime = rpp::ComponentRuntimeAccess::make(parent, std::move(children));
   ASSERT_TRUE(runtime.configure().success);

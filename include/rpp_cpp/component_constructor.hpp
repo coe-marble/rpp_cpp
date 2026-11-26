@@ -28,7 +28,7 @@ class ExternalComponentProcessRegistry;
 template<class Threading>
 class ComponentConstructor
 {
-  using ComponentRuntime = rpp::ComponentRuntime<Threading::concurrent>;
+  using ComponentRuntime = rpp::BasicComponentRuntime<Threading::concurrent>;
   using SlotManager = BasicSlotManager<Threading>;
   using ComponentData = detail::ComponentData<Threading>;
 

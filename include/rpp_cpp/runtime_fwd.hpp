@@ -18,11 +18,17 @@ class BasicRppServerHost;
 
 /// Component lifecycle and administration through its owning slot.
 template<bool Concurrent = false>
-using ComponentRuntime = BasicRuntime<Concurrent, false>;
+using BasicComponentRuntime = BasicRuntime<Concurrent, false>;
+
+using ComponentRuntime = BasicComponentRuntime<false>;
+using ConcurrentComponentRuntime = BasicComponentRuntime<true>;
 
 /// Script services and slot collection, without a root component or owning slot.
 template<bool Concurrent = false>
-using ScriptRuntime = BasicRuntime<Concurrent, true>;
+using BasicScriptRuntime = BasicRuntime<Concurrent, true>;
+
+using ScriptRuntime = BasicScriptRuntime<false>;
+using ConcurrentScriptRuntime = BasicScriptRuntime<true>;
 
 using SlotManager = BasicSlotManager<SingleThreaded>;
 using ConcurrentSlotManager = BasicSlotManager<Concurrent>;

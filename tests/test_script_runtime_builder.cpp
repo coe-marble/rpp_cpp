@@ -23,15 +23,23 @@ namespace fs = std::filesystem;
 using rpp::testing::ScriptBuilderPlugin;
 using json = nlohmann::json;
 
-static_assert(!std::is_same_v<rpp::ComponentRuntime<>, rpp::ScriptRuntime<>>);
-static_assert(!std::is_same_v<rpp::ComponentRuntime<true>, rpp::ScriptRuntime<true>>);
+static_assert(std::is_same_v<rpp::ComponentRuntime, rpp::BasicComponentRuntime<false>>);
+static_assert(std::is_same_v<rpp::ComponentRuntime, rpp::BasicComponentRuntime<>>);
+static_assert(std::is_same_v<rpp::ConcurrentComponentRuntime, rpp::BasicComponentRuntime<true>>);
+static_assert(!std::is_same_v<rpp::ComponentRuntime, rpp::ConcurrentComponentRuntime>);
+static_assert(std::is_same_v<rpp::ScriptRuntime, rpp::BasicScriptRuntime<false>>);
+static_assert(std::is_same_v<rpp::ScriptRuntime, rpp::BasicScriptRuntime<>>);
+static_assert(std::is_same_v<rpp::ConcurrentScriptRuntime, rpp::BasicScriptRuntime<true>>);
+static_assert(!std::is_same_v<rpp::ScriptRuntime, rpp::ConcurrentScriptRuntime>);
+static_assert(!std::is_same_v<rpp::ComponentRuntime, rpp::ScriptRuntime>);
+static_assert(!std::is_same_v<rpp::ConcurrentComponentRuntime, rpp::ConcurrentScriptRuntime>);
 
 template<class Threading>
 struct RuntimeBuilderReturnTypes
 {
   using Builder = rpp::BasicComponentRuntimeBuilder<Threading>;
-  using Component = rpp::ComponentRuntime<Threading::concurrent>;
-  using Script = rpp::ScriptRuntime<Threading::concurrent>;
+  using Component = rpp::BasicComponentRuntime<Threading::concurrent>;
+  using Script = rpp::BasicScriptRuntime<Threading::concurrent>;
 
   static_assert(std::is_same_v<
       decltype(std::declval<Builder &>().build_component(

@@ -19,13 +19,14 @@ namespace rpp
  * Supplies construction options retained by each slot manager for later loads.
  * Building prepares transports but never calls configure or activate callbacks.
  * Build calls on the same builder must not overlap or reenter the builder.
- * See docs/context-flow.md for the complete construction and ownership sequence.
+ * Construction and ownership guide:
+ * https://github.com/coe-marble/rpp_docs/blob/develop/docs/cpp-context-flow.md
  */
 template<class Threading>
 class BasicComponentRuntimeBuilder
 {
-  using ComponentRuntime = rpp::ComponentRuntime<Threading::concurrent>;
-  using ScriptRuntime = rpp::ScriptRuntime<Threading::concurrent>;
+  using ComponentRuntime = rpp::BasicComponentRuntime<Threading::concurrent>;
+  using ScriptRuntime = rpp::BasicScriptRuntime<Threading::concurrent>;
   using SlotManager = BasicSlotManager<Threading>;
   using ComponentRuntimeBuilder = BasicComponentRuntimeBuilder<Threading>;
 

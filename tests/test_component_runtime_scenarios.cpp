@@ -51,8 +51,8 @@ template<class Threading>
 class ComponentRuntimeScenarios : public ::testing::Test
 {
 public:
-  using Runtime = rpp::ComponentRuntime<Threading::concurrent>;
-  using ScriptRuntime = rpp::ScriptRuntime<Threading::concurrent>;
+  using Runtime = rpp::BasicComponentRuntime<Threading::concurrent>;
+  using ScriptRuntime = rpp::BasicScriptRuntime<Threading::concurrent>;
   EventLog log;
   std::map<std::string, std::shared_ptr<ScenarioController>> controllers;
   std::unique_ptr<ScriptRuntime> root;

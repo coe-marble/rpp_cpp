@@ -69,7 +69,7 @@ CallbackResult BasicSlotManager<Threading>::activate_selected(
 }
 
 template<class Threading>
-std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::runtimes() const
+std::vector<std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::runtimes() const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   std::vector<std::shared_ptr<ComponentRuntime>> result;
@@ -84,7 +84,8 @@ std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> Basic
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::runtime(
+std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
+runtime(
   const std::string & name) const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
@@ -124,7 +125,7 @@ std::shared_ptr<Plugin> BasicSlotManager<Threading>::subcomponent_instance(
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
+std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
 selected_runtime() const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
@@ -166,7 +167,7 @@ BasicSlotManager<Threading>::subcomponent_contexts() const
 }
 
 template<class Threading>
-std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::activation_runtimes() const
+std::vector<std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::activation_runtimes() const
 {
   if (activation_policy_ != ActivationPolicy::EXCLUSIVE) {return runtimes();}
   auto selected = selected_runtime();
@@ -175,7 +176,7 @@ std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> Basic
 }
 
 template<class Threading>
-std::vector<std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::deactivation_runtimes() const
+std::vector<std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>>> BasicSlotManager<Threading>::deactivation_runtimes() const
 {
   std::lock_guard<typename Threading::Mutex> lock(slot_mutex_);
   std::vector<std::shared_ptr<ComponentRuntime>> result;
@@ -353,7 +354,7 @@ CallbackResult BasicSlotManager<Threading>::drain(Entry & item, Timeout timeout)
 }
 
 template<class Threading>
-std::shared_ptr<rpp::ComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
+std::shared_ptr<rpp::BasicComponentRuntime<Threading::concurrent>> BasicSlotManager<Threading>::
 runtime_view(const Entry & item) const
 {
   auto owner = const_cast<SlotManager *>(this)->shared_from_this();
@@ -395,7 +396,7 @@ std::unique_ptr<detail::ComponentData<Threading>> BasicSlotManager<Threading>::t
 }
 
 template<class Threading>
-rpp::ComponentRuntime<Threading::concurrent> BasicSlotManager<Threading>::create_root(
+rpp::BasicComponentRuntime<Threading::concurrent> BasicSlotManager<Threading>::create_root(
   std::unique_ptr<ComponentData> component, std::shared_ptr<SlotManager> manager)
 {
   if (!component->instance_) {

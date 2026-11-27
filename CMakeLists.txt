@@ -200,6 +200,11 @@ if(BUILD_TESTING AND ament_cmake_FOUND)
   # STEP 3: BUILD TEST TARGETS
   # ---------------------------------------------------------------------------
 
+  ament_add_gtest(test_message_allocation tests/test_message_allocation.cpp)
+  target_sources(test_message_allocation PRIVATE ${GENERATED_SOURCES})
+  target_include_directories(test_message_allocation PRIVATE include ${INCLUDE_GENERATED_DIR})
+  # The shared fixture includes RPC interfaces alongside the allocation structs.
+  target_link_libraries(test_message_allocation CapnProto::capnp CapnProto::capnp-rpc)
 
 
   ament_add_gtest(test_instance_plugin_cpp tests/test_instance_plugin_cpp.cpp)

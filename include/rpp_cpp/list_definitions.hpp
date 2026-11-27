@@ -5,6 +5,7 @@
 #include <functional>
 #include <type_traits>
 #include <capnp/message.h>
+#include "rpp_cpp/message_allocation.hpp"
 
 namespace rpp
 {
@@ -96,7 +97,7 @@ private:
   using StructureCallback = std::function<typename capnp::List<El_T<T>>::Builder(size_t)>;
 
         // The variant storage for the allocator mechanism
-        // SharedMessageBuilder is first, meaning List() = default; initializes with a standalone message.
+        // Standalone storage is allocated when resize() supplies the element count.
   using SharedMessageBuilder = std::shared_ptr<capnp::MallocMessageBuilder>;
   std::variant<SharedMessageBuilder, StructureCallback> allocator_;
 
@@ -132,10 +133,13 @@ public:
 
         // =========================================================================
         // CONSTRUCTOR 1: Empty constructor for standalone lists (not nested)
-        // Inits its own MallocMessageBuilder via shared_ptr to keep data alive for readers
+        // Leave the owning builder empty until the requested list size is known.
         // =========================================================================
   List()
-  : allocator_(std::make_shared<capnp::MallocMessageBuilder>()) {}
+  : allocator_(SharedMessageBuilder{}) {}
+
+  explicit List(size_t size)
+  : List() {resize(size);}
 
         // =========================================================================
         // CONSTRUCTOR 2: For nested lists inside structures
@@ -193,9 +197,12 @@ private:
   {
             // Case 1: Standalone root list (posesses its own message builder)
     if (std::holds_alternative<SharedMessageBuilder>(allocator_)) {
-      if (auto & mb = std::get<SharedMessageBuilder>(allocator_)) {
-        list_builder_ = mb->template initRoot<capnp::List<El_T<T>>>(new_size);
+      const auto words = list_message_segment_words<El_T<T>>(new_size);
+      auto & message = std::get<SharedMessageBuilder>(allocator_);
+      if (!message) {
+        message = std::make_shared<capnp::MallocMessageBuilder>(words);
       }
+      list_builder_ = message->template initRoot<capnp::List<El_T<T>>>(new_size);
     }
             // Case 2: Nested list field inside a structure (triggers parent allocation)
     else if (std::holds_alternative<StructureCallback>(allocator_)) {
@@ -213,7 +220,8 @@ class List<std::string> {
 private:
   capnp::List<capnp::Text>::Builder list_builder_;
   using StructureCallback = std::function<capnp::List<capnp::Text>::Builder(size_t)>;
-  std::variant<StructureCallback, capnp::MessageBuilder *> allocator_;
+  using SharedMessageBuilder = std::shared_ptr<capnp::MallocMessageBuilder>;
+  std::variant<SharedMessageBuilder, StructureCallback, capnp::MessageBuilder *> allocator_;
 
 public:
   struct ElementRef
@@ -234,7 +242,10 @@ public:
   };
 
   List()
-  : list_builder_(), allocator_(StructureCallback()) {}
+  : list_builder_(), allocator_(SharedMessageBuilder{}) {}
+
+  explicit List(size_t size)
+  : List() {resize(size);}
 
   List(capnp::List<capnp::Text>::Builder list_builder, StructureCallback cb)
   : list_builder_(list_builder), allocator_(cb) {}
@@ -246,7 +257,14 @@ public:
 
   void init(size_t new_size)
   {
-    if (std::holds_alternative<StructureCallback>(allocator_)) {
+    if (std::holds_alternative<SharedMessageBuilder>(allocator_)) {
+      const auto words = list_message_segment_words<capnp::Text>(new_size);
+      auto & message = std::get<SharedMessageBuilder>(allocator_);
+      if (!message) {
+        message = std::make_shared<capnp::MallocMessageBuilder>(words);
+      }
+      list_builder_ = message->initRoot<capnp::List<capnp::Text>>(new_size);
+    } else if (std::holds_alternative<StructureCallback>(allocator_)) {
       list_builder_ = std::get<StructureCallback>(allocator_)(new_size);
     } else if (std::holds_alternative<capnp::MessageBuilder *>(allocator_)) {
       if (auto * mb = std::get<capnp::MessageBuilder *>(allocator_)) {
@@ -264,7 +282,14 @@ public:
 
   operator capnp::List<capnp::Text>::Builder() {return list_builder_;}
   operator capnp::List<capnp::Text>::Reader() const {return list_builder_.asReader();}
-  operator ListConst<std::string>() const {return ListConst<std::string>(list_builder_.asReader());}
+  operator ListConst<std::string>() const
+  {
+    if (std::holds_alternative<SharedMessageBuilder>(allocator_)) {
+      return ListConst<std::string>(list_builder_.asReader(),
+          std::get<SharedMessageBuilder>(allocator_));
+    }
+    return ListConst<std::string>(list_builder_.asReader());
+  }
 };
 
 class DataConst {
@@ -299,7 +324,10 @@ private:
 
 public:
   Data()
-  : builder_(), allocator_(std::make_shared<capnp::MallocMessageBuilder>()) {}
+  : builder_(), allocator_(std::shared_ptr<capnp::MallocMessageBuilder>{}) {}
+
+  explicit Data(size_t size)
+  : Data() {resize(size);}
 
   Data(capnp::Data::Builder builder, std::function<capnp::Data::Builder(size_t)> cb = nullptr)
   : builder_(builder), allocator_(cb) {}
@@ -315,7 +343,14 @@ public:
 
   operator capnp::Data::Builder() {return builder_;}
   operator capnp::Data::Reader() const {return builder_.asReader();}
-  operator DataConst() const {return DataConst(builder_.asReader());}
+  operator DataConst() const
+  {
+    using SharedMessageBuilder = std::shared_ptr<capnp::MallocMessageBuilder>;
+    if (std::holds_alternative<SharedMessageBuilder>(allocator_)) {
+      return DataConst(builder_.asReader(), std::get<SharedMessageBuilder>(allocator_));
+    }
+    return DataConst(builder_.asReader());
+  }
 
 private:
   void init(size_t new_size)
@@ -323,9 +358,12 @@ private:
     if (std::holds_alternative<ResizeCallback>(allocator_)) {
       builder_ = std::get<ResizeCallback>(allocator_)(new_size);
     } else if (std::holds_alternative<std::shared_ptr<capnp::MallocMessageBuilder>>(allocator_)) {
-      if (auto & mb = std::get<std::shared_ptr<capnp::MallocMessageBuilder>>(allocator_)) {
-        builder_ = mb->initRoot<capnp::Data>(new_size);
+      const auto words = list_message_segment_words<std::uint8_t>(new_size);
+      auto & message = std::get<std::shared_ptr<capnp::MallocMessageBuilder>>(allocator_);
+      if (!message) {
+        message = std::make_shared<capnp::MallocMessageBuilder>(words);
       }
+      builder_ = message->initRoot<capnp::Data>(new_size);
     }
   }
 };
